@@ -42,7 +42,6 @@ private class FilmRenderer(private val host: GLSurfaceView) : GLSurfaceView.Rend
     @Volatile var look: Look = Look(Presets.original)
 
     @Volatile private var pendingRequest: SurfaceRequest? = null
-    @Volatile private var rotationDegrees = 90
 
     private var glReady = false
     private var program: FilmProgram? = null
@@ -81,10 +80,6 @@ private class FilmRenderer(private val host: GLSurfaceView) : GLSurfaceView.Rend
         val surface = Surface(st)
         val executor = ContextCompat.getMainExecutor(host.context)
 
-        request.setTransformationInfoListener(executor) { info ->
-            rotationDegrees = info.rotationDegrees
-            host.requestRender()
-        }
         request.provideSurface(surface, executor) { surface.release() }
     }
 
@@ -131,39 +126,13 @@ private class FilmRenderer(private val host: GLSurfaceView) : GLSurfaceView.Rend
         }
         if (!hasFrame) return
 
-        Matrix.multiplyMM(texMatrix, 0, stMatrix, 0, rotationMatrix(rotationDegrees), 0)
+        // Le SurfaceTexture embarque déjà la rotation capteur -> écran (portrait) : on ne
+        // rajoute rien. (Une rotation manuelle en plus donnait une image penchée.)
+        System.arraycopy(stMatrix, 0, texMatrix, 0, 16)
 
         // Le grain "vit" à ~12 images/s, comme un vrai grain qui change à chaque photogramme.
         val seed = ((System.nanoTime() - startNs) / 83_000_000L % 1000L).toFloat() * 1.618f
         prog.draw(texId, texMatrix, look, viewW.toFloat() / viewH, seed)
     }
 
-    companion object {
-        /**
-         * Convertit les coordonnées d'affichage (a,b), origine en bas à gauche, en coordonnées
-         * du buffer capteur (p,q) selon la rotation à appliquer au buffer pour qu'il soit droit.
-         * Matrices en colonnes.
-         */
-        fun rotationMatrix(deg: Int): FloatArray = when (((deg % 360) + 360) % 360) {
-            90 -> floatArrayOf( // p = 1-b, q = a
-                0f, 1f, 0f, 0f,
-                -1f, 0f, 0f, 0f,
-                0f, 0f, 1f, 0f,
-                1f, 0f, 0f, 1f,
-            )
-            180 -> floatArrayOf( // p = 1-a, q = 1-b
-                -1f, 0f, 0f, 0f,
-                0f, -1f, 0f, 0f,
-                0f, 0f, 1f, 0f,
-                1f, 1f, 0f, 1f,
-            )
-            270 -> floatArrayOf( // p = b, q = 1-a
-                0f, -1f, 0f, 0f,
-                1f, 0f, 0f, 0f,
-                0f, 0f, 1f, 0f,
-                0f, 1f, 0f, 1f,
-            )
-            else -> FilmProgram.IDENTITY
-        }
-    }
 }

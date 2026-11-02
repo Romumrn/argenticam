@@ -52,14 +52,14 @@ class MainActivity : ComponentActivity() {
         }
 
         if (granted) {
-            CameraScreen()
+            ArgentiApp()
         } else {
             Column(
                 Modifier.fillMaxSize().padding(32.dp),
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("FilmCam a besoin de la caméra pour prendre des photos.", color = Color.White)
+                Text("ArgentiCam a besoin de la caméra pour prendre des photos.", color = Color.White)
                 Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }, modifier = Modifier.padding(top = 16.dp)) {
                     Text("Autoriser la caméra")
                 }
