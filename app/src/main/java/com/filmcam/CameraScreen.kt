@@ -199,13 +199,15 @@ fun CameraScreen(
     val imageCapture = remember {
         ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .setJpegQuality(100)
             .setResolutionSelector(
                 ResolutionSelector.Builder()
                     .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                    .setResolutionStrategy(
-                        // ~12 Mpx : assez pour une belle photo, assez petit pour tenir en texture GL.
-                        ResolutionStrategy(Size(4032, 3024), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER),
-                    )
+                    // Toujours la meilleure qualité : la plus haute résolution que le téléphone
+                    // accepte de donner (y compris les modes haute résolution des gros capteurs).
+                    // Le développement se fait par tuiles, la taille n'est donc pas limitée.
+                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                    .setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE)
                     .build(),
             )
             .build()

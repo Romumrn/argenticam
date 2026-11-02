@@ -26,7 +26,8 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - Choix de l'**objectif** (ultra grand-angle, principal, télé) selon ce que le téléphone expose
 - **Mode Polaroid** : cadre Polaroid 600 dans le viseur (le carré visé = la photo), tirage carré posé sur un cadre papier crème aux vraies proportions (88 × 107 mm), et **développement animé** après la prise de vue
 - Compteur de poses façon rouleau de **36 vues**, **galerie intégrée** (grille, visionneuse avec **zoom** au pincement et au double-tap, partage, suppression)
-- Photos ~12 Mpx enregistrées dans `Pictures/ArgentiCam`
+- **Qualité maximale** : capture à la plus haute résolution que le téléphone autorise (50 Mpx et plus selon le capteur), développement par tuiles sans perte de résolution, JPEG qualité 100, métadonnées EXIF conservées (date, appareil, vitesse, ISO, focale ; la recette est notée dans la description)
+- Photos enregistrées dans `Pictures/ArgentiCam`
 
 ### Limites selon les téléphones
 

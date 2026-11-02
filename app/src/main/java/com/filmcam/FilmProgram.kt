@@ -234,7 +234,10 @@ vec3 applyLut(vec3 c) {
     return mix(s0, s1, b - b0);
 }
 
-vec3 tap(vec2 displayOffset) { return texture2D(uTex, vTex + uLin * displayOffset).rgb; }
+// Décalage exprimé en fraction de la HAUTEUR DE LA PHOTO (isotrope), converti en coordonnées
+// d'affichage puis de texture. Ainsi les rayons sont identiques dans l'aperçu, en Polaroid
+// et dans chaque tuile du développement pleine résolution.
+vec3 tap(vec2 d) { return texture2D(uTex, vTex + uLin * (vec2(d.x / uAspect, d.y) * uFrame.w)).rgb; }
 
 float hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -248,7 +251,7 @@ void main() {
 
     // Netteté : masque flou sur un petit rayon (négatif = adoucit)
     if (abs(uSharp) > 0.001) {
-        vec2 o = vec2(0.0012 / uAspect, 0.0012);
+        vec2 o = vec2(0.0012, 0.0012);
         vec3 b = (tap(vec2(o.x, 0.0)) + tap(vec2(-o.x, 0.0)) + tap(vec2(0.0, o.y)) + tap(vec2(0.0, -o.y))) * 0.25;
         c = clamp(c + (c - b) * uSharp * 0.9, 0.0, 1.0);
     }
@@ -258,8 +261,8 @@ void main() {
         float lb = 0.0;
         for (int i = 0; i < 6; i++) {
             float ang = float(i) * 1.047198;
-            vec2 dir = vec2(cos(ang) / uAspect, sin(ang));
-            vec2 dir2 = vec2(cos(ang + 0.5236) / uAspect, sin(ang + 0.5236));
+            vec2 dir = vec2(cos(ang), sin(ang));
+            vec2 dir2 = vec2(cos(ang + 0.5236), sin(ang + 0.5236));
             lb += luma(tap(dir * 0.01)) + luma(tap(dir2 * 0.022));
         }
         lb /= 12.0;
@@ -273,7 +276,7 @@ void main() {
         float glow = 0.0;
         for (int i = 0; i < 8; i++) {
             float ang = float(i) * 0.785398;
-            vec2 dir = vec2(cos(ang) / uAspect, sin(ang));
+            vec2 dir = vec2(cos(ang), sin(ang));
             glow += max(luma(tap(dir * 0.012)) - 0.65, 0.0) + max(luma(tap(dir * 0.032)) - 0.65, 0.0);
         }
         glow = glow / 16.0 / 0.35;
@@ -362,7 +365,7 @@ void main() {
 
     // Focus peaking : les contours nets s'allument en rouge (aide à la mise au point manuelle)
     if (uPeaking > 0.5) {
-        vec2 px = vec2(0.0018 / uAspect, 0.0018);
+        vec2 px = vec2(0.0018, 0.0018);
         float gx = luma(tap(vec2(px.x, 0.0))) - luma(tap(vec2(-px.x, 0.0)));
         float gy = luma(tap(vec2(0.0, px.y))) - luma(tap(vec2(0.0, -px.y)));
         float edge = smoothstep(0.07, 0.16, length(vec2(gx, gy)));

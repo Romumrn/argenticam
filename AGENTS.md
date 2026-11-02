@@ -40,7 +40,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `FilmPreset.kt` | Pellicules de base (`Presets.all`) : simulations Fuji (LUT) + pellicules paramétriques |
 | `FilmProgram.kt` | **Le shader** (vertex + fragment) et son envoi d'uniforms |
 | `FilmPreviewView.kt` | `GLSurfaceView` alimentée par CameraX (texture OES) |
-| `FilmProcessor.kt` | Développement hors écran (EGL pbuffer) de la photo pleine résolution |
+| `FilmProcessor.kt` | Développement pleine résolution **par tuiles** (framebuffer 2048 px + marges), sans limite de taille |
 | `PhotoPipeline.kt` | JPEG CameraX → rotation → shader → MediaStore (`Pictures/ArgentiCam`) |
 | `LutCache.kt` | Chargement des LUT 3D depuis `assets/luts/` |
 | `RetroDial.kt` | La molette rétro (crans, vibration, inertie) |
@@ -63,8 +63,13 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
 - Le shader est en **GLSL ES 1.00** (GLES 2) : `texture2D`, `gl_FragColor`, boucles à bornes
   constantes, pas de tableaux initialisés. Deux variantes : `samplerExternalOES` (aperçu) et
   `sampler2D` (photo) — le texte `SAMPLER` est remplacé à la compilation.
-- Les effets à rayon (netteté, clarté, halation, peaking) s'expriment **en fraction de la hauteur
-  d'image** et passent par `uLin`, pour que l'aperçu (~1440 px) et la photo (~4000 px) se ressemblent.
+- Les effets à rayon (netteté, clarté, halation, peaking) passent par `tap(d)` avec `d` en **fraction de
+  la hauteur de la photo** (isotrope). `tap` convertit via `uFrame.w`, `uAspect` et `uLin` : c'est ce qui rend
+  l'aperçu, le Polaroid et chaque tuile du développement identiques. Tout nouvel effet qui lit des pixels
+  voisins doit passer par `tap` et rester sous `FilmProcessor.REACH` (marge des tuiles), sinon il y aura des coutures.
+- Grain et vignettage se calculent en coordonnées de la photo entière : `(vUv - uFrame.xy) / uFrame.zw`.
+- Qualité : capture `HIGHEST_AVAILABLE_STRATEGY` + `PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE`, JPEG 100,
+  EXIF recopiés (`PhotoPipeline.copyExif`). Ne pas réintroduire de plafond de résolution.
 - **Orientation de l'aperçu** : la matrice du `SurfaceTexture` inclut déjà la rotation capteur → écran.
   Ne pas rajouter de rotation (ça a déjà penché l'image). L'activité est verrouillée en portrait.
 - **Réglages manuels** : beaucoup de téléphones (Xiaomi notamment) n'autorisent pas les applis
