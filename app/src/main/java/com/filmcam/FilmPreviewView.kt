@@ -1,0 +1,169 @@
+package com.filmcam
+
+import android.content.Context
+import android.graphics.SurfaceTexture
+import android.opengl.GLES11Ext
+import android.opengl.GLES20
+import android.opengl.GLSurfaceView
+import android.opengl.Matrix
+import android.view.Surface
+import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceRequest
+import androidx.core.content.ContextCompat
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
+
+/**
+ * Aperçu caméra rendu en OpenGL : chaque image du capteur passe par le shader de pellicule
+ * avant d'être affichée, donc on voit le rendu final en direct.
+ */
+class FilmPreviewView(context: Context) : GLSurfaceView(context) {
+
+    private val renderer = FilmRenderer(this)
+
+    /** À donner à `Preview.setSurfaceProvider`. */
+    val surfaceProvider = Preview.SurfaceProvider { request -> renderer.onSurfaceRequested(request) }
+
+    init {
+        setEGLContextClientVersion(2)
+        setRenderer(renderer)
+        renderMode = RENDERMODE_WHEN_DIRTY
+    }
+
+    fun setLook(look: Look) {
+        renderer.look = look
+        requestRender()
+    }
+}
+
+private class FilmRenderer(private val host: GLSurfaceView) : GLSurfaceView.Renderer {
+
+    @Volatile var look: Look = Look(Presets.original)
+
+    @Volatile private var pendingRequest: SurfaceRequest? = null
+    @Volatile private var rotationDegrees = 90
+
+    private var glReady = false
+    private var program: FilmProgram? = null
+    private var texId = 0
+    private var surfaceTexture: SurfaceTexture? = null
+    private val frameAvailable = AtomicBoolean(false)
+    private var hasFrame = false
+
+    private var viewW = 1
+    private var viewH = 1
+    private val stMatrix = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
+    private val texMatrix = FloatArray(16)
+    private val startNs = System.nanoTime()
+
+    // ---- appelé depuis CameraX (thread principal) ----
+    fun onSurfaceRequested(request: SurfaceRequest) {
+        pendingRequest?.willNotProvideSurface()
+        pendingRequest = request
+        host.queueEvent { tryProvideSurface() }
+    }
+
+    // ---- thread GL ----
+    private fun tryProvideSurface() {
+        val request = pendingRequest ?: return
+        if (!glReady) return // sera relancé par onSurfaceCreated
+        pendingRequest = null
+
+        val st = surfaceTexture ?: SurfaceTexture(texId).also {
+            it.setOnFrameAvailableListener {
+                frameAvailable.set(true)
+                host.requestRender()
+            }
+            surfaceTexture = it
+        }
+        st.setDefaultBufferSize(request.resolution.width, request.resolution.height)
+        val surface = Surface(st)
+        val executor = ContextCompat.getMainExecutor(host.context)
+
+        request.setTransformationInfoListener(executor) { info ->
+            rotationDegrees = info.rotationDegrees
+            host.requestRender()
+        }
+        request.provideSurface(surface, executor) { surface.release() }
+    }
+
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        // Contexte (re)créé : les anciennes ressources GL sont invalides.
+        surfaceTexture?.release()
+        surfaceTexture = null
+        hasFrame = false
+
+        val ids = IntArray(1)
+        GLES20.glGenTextures(1, ids, 0)
+        texId = ids[0]
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, texId)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+
+        program = FilmProgram(external = true)
+        glReady = true
+        tryProvideSurface()
+    }
+
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        viewW = width
+        viewH = height
+        GLES20.glViewport(0, 0, width, height)
+    }
+
+    override fun onDrawFrame(gl: GL10?) {
+        GLES20.glClearColor(0f, 0f, 0f, 1f)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+
+        val st = surfaceTexture ?: return
+        val prog = program ?: return
+        if (frameAvailable.getAndSet(false)) {
+            try {
+                st.updateTexImage()
+                st.getTransformMatrix(stMatrix)
+                hasFrame = true
+            } catch (_: Exception) {
+                return
+            }
+        }
+        if (!hasFrame) return
+
+        Matrix.multiplyMM(texMatrix, 0, stMatrix, 0, rotationMatrix(rotationDegrees), 0)
+
+        // Le grain "vit" à ~12 images/s, comme un vrai grain qui change à chaque photogramme.
+        val seed = ((System.nanoTime() - startNs) / 83_000_000L % 1000L).toFloat() * 1.618f
+        prog.draw(texId, texMatrix, look, viewW.toFloat() / viewH, seed)
+    }
+
+    companion object {
+        /**
+         * Convertit les coordonnées d'affichage (a,b), origine en bas à gauche, en coordonnées
+         * du buffer capteur (p,q) selon la rotation à appliquer au buffer pour qu'il soit droit.
+         * Matrices en colonnes.
+         */
+        fun rotationMatrix(deg: Int): FloatArray = when (((deg % 360) + 360) % 360) {
+            90 -> floatArrayOf( // p = 1-b, q = a
+                0f, 1f, 0f, 0f,
+                -1f, 0f, 0f, 0f,
+                0f, 0f, 1f, 0f,
+                1f, 0f, 0f, 1f,
+            )
+            180 -> floatArrayOf( // p = 1-a, q = 1-b
+                -1f, 0f, 0f, 0f,
+                0f, -1f, 0f, 0f,
+                0f, 0f, 1f, 0f,
+                1f, 1f, 0f, 1f,
+            )
+            270 -> floatArrayOf( // p = b, q = 1-a
+                0f, -1f, 0f, 0f,
+                1f, 0f, 0f, 0f,
+                0f, 0f, 1f, 0f,
+                0f, 1f, 0f, 1f,
+            )
+            else -> FilmProgram.IDENTITY
+        }
+    }
+}
