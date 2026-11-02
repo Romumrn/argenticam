@@ -20,16 +20,30 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+/**
+ * Balance des blancs : automatique, ou température en Kelvin (2500..10000 K, comme un boîtier Fuji).
+ * En Kelvin, le téléphone est calé en lumière du jour (~5500 K, mode que tous les téléphones
+ * respectent) et le shader convertit vers la température choisie. Piloter directement les gains
+ * du capteur demanderait MANUAL_POST_PROCESSING, souvent bloqué pour les applis tierces.
+ */
 enum class WhiteBalance(val label: String, val mode: Int) {
     AUTO("Auto", CaptureRequest.CONTROL_AWB_MODE_AUTO),
-    DAYLIGHT("Soleil", CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT),
-    CLOUDY("Nuageux", CaptureRequest.CONTROL_AWB_MODE_CLOUDY_DAYLIGHT),
-    TUNGSTEN("Tungstène", CaptureRequest.CONTROL_AWB_MODE_INCANDESCENT),
-    FLUORESCENT("Fluo", CaptureRequest.CONTROL_AWB_MODE_FLUORESCENT),
-
-    /** Température réglée à la main : le téléphone est calé en lumière du jour, le shader corrige. */
     KELVIN("Kelvin", CaptureRequest.CONTROL_AWB_MODE_DAYLIGHT),
 }
+
+/** Raccourcis : la température correspondant aux anciens préréglages. */
+val KelvinPresets: List<Pair<String, Int>> = listOf(
+    "Bougie" to 2500,
+    "Tungstène" to 3200,
+    "Fluo" to 4000,
+    "Soleil" to 5500,
+    "Nuageux" to 6500,
+    "Ombre" to 7500,
+)
+
+const val KELVIN_MIN = 2500
+const val KELVIN_MAX = 10000
+const val KELVIN_STEP = 100
 
 /** Le sélecteur de mise au point d'un Fuji : S / C / M. */
 enum class FocusMode(val label: String) {

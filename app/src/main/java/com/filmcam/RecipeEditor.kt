@@ -174,19 +174,22 @@ fun RecipeEditor(
             SegRow("FX Bleu", Level.entries, r.chromeBlue, { it.label }) { onChange(r.copy(chromeBlue = it)) }
 
             Section("BALANCE DES BLANCS")
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items(WhiteBalance.entries) { wb ->
-                    SegChip(wb.label, wb == r.wb) { onChange(r.copy(wb = wb)) }
-                }
+            SegRow("Mode", WhiteBalance.entries, r.wb, { if (it == WhiteBalance.KELVIN) "K" else "Auto" }) {
+                onChange(r.copy(wb = it))
             }
             if (r.wb == WhiteBalance.KELVIN) {
-                Stepper("Température", "${r.kelvin}K", r.kelvin > 2500, r.kelvin < 10000,
-                    onMinus = { onChange(r.copy(kelvin = (r.kelvin - 100).coerceAtLeast(2500))) },
-                    onPlus = { onChange(r.copy(kelvin = (r.kelvin + 100).coerceAtMost(10000))) },
+                Stepper("Température", "${r.kelvin}K", r.kelvin > KELVIN_MIN, r.kelvin < KELVIN_MAX,
+                    onMinus = { onChange(r.copy(kelvin = (r.kelvin - KELVIN_STEP).coerceAtLeast(KELVIN_MIN))) },
+                    onPlus = { onChange(r.copy(kelvin = (r.kelvin + KELVIN_STEP).coerceAtMost(KELVIN_MAX))) },
                 )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    items(KelvinPresets) { (name, k) ->
+                        SegChip("$name ${k}K", r.kelvin == k) { onChange(r.copy(kelvin = k)) }
+                    }
+                }
             }
             Stepper("Décalage rouge", signed(r.wbShiftR), r.wbShiftR > -9, r.wbShiftR < 9,
                 onMinus = { onChange(r.copy(wbShiftR = r.wbShiftR - 1)) },

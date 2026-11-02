@@ -587,7 +587,7 @@ fun CameraScreen(
                 Tab.Speed to if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO",
                 Tab.Iso to if (settings.manual) settings.iso.toString() else "AUTO",
                 Tab.Ev to if (settings.manual) "—" else evLabel(settings.evIndex, evStep),
-                Tab.Wb to if (recipe.wb == WhiteBalance.KELVIN) "${recipe.kelvin}K" else recipe.wb.label.uppercase(),
+                Tab.Wb to if (recipe.wb == WhiteBalance.KELVIN) "${recipe.kelvin}K" else "AUTO",
                 Tab.Focus to settings.focusMode.label,
             )
             LazyRow(
@@ -741,12 +741,40 @@ fun CameraScreen(
                         }
                     }
 
-                    Tab.Wb -> ValueRow(
-                        values = WhiteBalance.entries,
-                        selected = recipe.wb,
-                        label = { if (it == WhiteBalance.KELVIN) "${recipe.kelvin}K" else it.label },
-                        onPick = { recipe = recipe.copy(wb = it) },
-                    )
+                    Tab.Wb -> {
+                        // Molette en Kelvin : tourner passe en K (comme la bague de MP passe en MF)
+                        val count = (KELVIN_MAX - KELVIN_MIN) / KELVIN_STEP + 1
+                        RetroDial(
+                            count = count,
+                            index = ((recipe.kelvin - KELVIN_MIN) / KELVIN_STEP).coerceIn(0, count - 1),
+                            onIndexChange = {
+                                recipe = recipe.copy(wb = WhiteBalance.KELVIN, kelvin = KELVIN_MIN + it * KELVIN_STEP)
+                            },
+                            labelAt = { i ->
+                                val k = KELVIN_MIN + i * KELVIN_STEP
+                                if (k % 500 == 0) k.toString() else null
+                            },
+                            modifier = Modifier.fillMaxSize().padding(top = 18.dp),
+                            spacing = 16.dp,
+                            enabled = recipe.wb == WhiteBalance.KELVIN,
+                            onTouched = { if (recipe.wb != WhiteBalance.KELVIN) recipe = recipe.copy(wb = WhiteBalance.KELVIN) },
+                        )
+                        Row(
+                            Modifier.align(Alignment.TopStart).padding(start = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Pill("AUTO", recipe.wb == WhiteBalance.AUTO) { recipe = recipe.copy(wb = WhiteBalance.AUTO) }
+                            Pill("K", recipe.wb == WhiteBalance.KELVIN) { recipe = recipe.copy(wb = WhiteBalance.KELVIN) }
+                        }
+                        // raccourci affiché quand la température tombe sur un préréglage
+                        KelvinPresets.firstOrNull { it.second == recipe.kelvin && recipe.wb == WhiteBalance.KELVIN }?.let {
+                            Text(
+                                it.first.uppercase(),
+                                color = Amber.copy(alpha = 0.8f), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp,
+                                modifier = Modifier.align(Alignment.TopEnd).padding(end = 14.dp, top = 3.dp),
+                            )
+                        }
+                    }
 
                     Tab.Focus -> {
                         if (mfActive && k != null && k.canManualFocus) {

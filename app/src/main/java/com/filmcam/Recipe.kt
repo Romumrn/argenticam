@@ -186,7 +186,7 @@ object Recipes {
     val builtIns: List<Recipe> = Presets.all.map { fromPreset(it) } + listOf(
         Recipe(
             id = "r_kodachrome", name = "Kodachrome 64", baseId = "fuji_classicchrome", builtIn = true,
-            wb = WhiteBalance.DAYLIGHT, wbShiftR = 2, wbShiftB = -5,
+            wb = WhiteBalance.KELVIN, kelvin = 5500, wbShiftR = 2, wbShiftB = -5,
             dynamicRange = 200, shadow = 0.5f, color = 2, sharpness = 1,
             grain = Level.WEAK, colorChrome = Level.STRONG,
         ),
@@ -275,8 +275,15 @@ object RecipeStore {
         name = o.optString("name", "Recette"),
         baseId = o.optString("baseId", "portra400"),
         builtIn = false,
-        wb = WhiteBalance.entries.firstOrNull { it.name == o.optString("wb") } ?: WhiteBalance.AUTO,
-        kelvin = o.optInt("kelvin", 5500),
+        // anciennes recettes : les préréglages deviennent des températures
+        wb = if (o.optString("wb", "AUTO") == "AUTO") WhiteBalance.AUTO else WhiteBalance.KELVIN,
+        kelvin = when (o.optString("wb")) {
+            "DAYLIGHT" -> 5500
+            "CLOUDY" -> 6500
+            "TUNGSTEN" -> 3200
+            "FLUORESCENT" -> 4000
+            else -> o.optInt("kelvin", 5500)
+        }.coerceIn(KELVIN_MIN, KELVIN_MAX),
         wbShiftR = o.optInt("wbShiftR", 0),
         wbShiftB = o.optInt("wbShiftB", 0),
         dynamicRange = o.optInt("dynamicRange", 100),

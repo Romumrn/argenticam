@@ -13,7 +13,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - Quelques recettes prêtes à l'emploi : Kodachrome 64, Portra (recette), Nostalgie 70s, Acros +R, Nuit tungstène
 - **Crée et sauvegarde tes propres recettes**, avec l'aperçu en direct pendant l'édition. Tous les réglages d'un boîtier Fuji :
   - Effet grain (Off / Faible / Fort, petit ou gros), Color Chrome, Color Chrome FX Bleu
-  - Balance des blancs (Auto, Soleil, Nuageux, Tungstène, Fluo ou **Kelvin** de 2500 à 10000 K) et **décalage R/B** de -9 à +9
+  - Balance des blancs **Auto ou en Kelvin** (2500 à 10000 K, molette au pas de 100 K, raccourcis Tungstène / Fluo / Soleil / Nuageux / Ombre) et **décalage R/B** de -9 à +9
   - Plage dynamique DR100 / DR200 / DR400, Hautes lumières et Ombres de -2 à +4, Couleur, Netteté, Clarté, Réduction du bruit
   - En plus : vignettage, halation, intensité du film
 
@@ -44,6 +44,8 @@ Les noms de pellicules et de simulations sont des marques de leurs propriétaire
 3. Ouvre-le et autorise l'installation depuis des sources inconnues si Android le demande.
 
 L'APK est un build de debug, signé avec la clé de debug. Il demande Android 10 ou plus (API 29).
+
+Pour les agents de code (et les contributeurs) : voir [`AGENTS.md`](AGENTS.md).
 
 ## Compiler soi-même
 
