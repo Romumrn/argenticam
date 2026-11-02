@@ -60,6 +60,7 @@ class FilmProgram(private val external: Boolean) {
         zoom: Float = 1f,
         zoomX: Float = 0.5f,
         zoomY: Float = 0.5f,
+        frame: FloatArray = FULL_FRAME,
     ) {
         val target = if (external) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D
 
@@ -93,6 +94,7 @@ class FilmProgram(private val external: Boolean) {
         GLES20.glUniform1f(loc("uGrain"), p.grain)
         GLES20.glUniform1f(loc("uGrainCells"), 1100f / p.grainSize)
         GLES20.glUniform1f(loc("uVignette"), p.vignette)
+        GLES20.glUniform4fv(loc("uFrame"), 1, frame, 0)
         GLES20.glUniform1f(loc("uHalation"), p.halation)
         GLES20.glUniform1f(loc("uSharp"), p.sharpness)
         GLES20.glUniform1f(loc("uClarity"), p.clarity)
@@ -157,6 +159,9 @@ class FilmProgram(private val external: Boolean) {
     }
 
     companion object {
+        /** Toute l'image (pas de recadrage). */
+        val FULL_FRAME = floatArrayOf(0f, 0f, 1f, 1f)
+
         val IDENTITY = floatArrayOf(
             1f, 0f, 0f, 0f,
             0f, 1f, 0f, 0f,
@@ -208,6 +213,7 @@ uniform float uDR;
 uniform float uHighlight;
 uniform float uShadow;
 uniform float uPeaking;
+uniform vec4 uFrame; // zone de la photo dans l'image affichée (x, y, l, h ; origine en bas à gauche)
 uniform sampler2D uLut;
 uniform float uLutOn;
 uniform vec3 uBwMix;
@@ -337,7 +343,9 @@ void main() {
     if (uGrain > 0.001) {
         float lg = luma(c);
         float amp = uGrain * (0.35 + 0.65 * (1.0 - abs(lg - 0.5) * 2.0));
-        vec2 cell = floor(vUv * vec2(uGrainCells * uAspect, uGrainCells)) + uSeed;
+        vec2 fu = (vUv - uFrame.xy) / uFrame.zw;
+        float fa = uAspect * uFrame.z / uFrame.w;
+        vec2 cell = floor(fu * vec2(uGrainCells * fa, uGrainCells)) + uSeed;
         float n = hash(cell) - 0.5;
         vec3 chroma = vec3(hash(cell + 17.0), hash(cell + 31.0), hash(cell + 53.0)) - 0.5;
         c += amp * (vec3(n) * 1.6 + chroma * 0.5 * (1.0 - uBw));
@@ -345,8 +353,8 @@ void main() {
 
     // Vignettage
     if (uVignette > 0.001) {
-        vec2 q = vUv - 0.5;
-        q.x *= uAspect;
+        vec2 q = (vUv - uFrame.xy) / uFrame.zw - 0.5;
+        q.x *= uAspect * uFrame.z / uFrame.w;
         c *= 1.0 - uVignette * smoothstep(0.22, 0.75, length(q));
     }
 

@@ -100,7 +100,7 @@ private val Card = Color(0xFF161616)
 private val Warn = Color(0xFFFF6B5B)
 
 private enum class Tab(val label: String) {
-    Recipe("RECETTE"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
+    Recipe("RECETTE"), Format("FORMAT"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
 }
 
 private enum class FocusUi { Idle, Searching, Locked, Failed, Manual }
@@ -180,6 +180,8 @@ fun CameraScreen(
     var peaking by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(Tab.Recipe) }
+    var polaroid by remember { mutableStateOf(false) }
+    var developing by remember { mutableStateOf<android.net.Uri?>(null) }
 
     // ---------- Mise au point au doigt ----------
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
@@ -377,6 +379,14 @@ fun CameraScreen(
         )
     }
 
+    fun setPolaroid(on: Boolean) {
+        polaroid = on
+        // en passant en Polaroid, on charge une pellicule instantanée (modifiable ensuite)
+        if (on && recipe.baseId != "polaroid600" && recipe.baseId != "sx70") {
+            Recipes.builtIns.firstOrNull { it.id == "base_polaroid600" }?.let { selectRecipe(it) }
+        }
+    }
+
     fun takePhoto() {
         if (busy) return
         busy = true
@@ -387,13 +397,17 @@ fun CameraScreen(
         }
         val params = renderParams
         val name = recipe.name
+        val asPolaroid = polaroid
         imageCapture.takePicture(
             workExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     try {
-                        PhotoPipeline.develop(context, image, params, name)
-                        mainExecutor.execute { currentOnSaved() }
+                        val uri = PhotoPipeline.develop(context, image, params, name, asPolaroid)
+                        mainExecutor.execute {
+                            currentOnSaved()
+                            if (asPolaroid) developing = uri
+                        }
                     } catch (e: Exception) {
                         mainExecutor.execute {
                             Toast.makeText(context, "Erreur : ${e.message}", Toast.LENGTH_LONG).show()
@@ -417,6 +431,7 @@ fun CameraScreen(
     val calibrated = caps?.focusCalibrated ?: true
     val mfActive = settings.focusMode == FocusMode.MF
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(Ink)) {
         // ================= Viseur =================
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
@@ -436,10 +451,11 @@ fun CameraScreen(
                             peaking && mfActive,
                             if (loupe && mfActive) 3f else 1f,
                             loupeCenter.x, loupeCenter.y,
+                            if (polaroid) Polaroid.shaderFrame else FilmProgram.FULL_FRAME,
                         )
                     },
                 )
-                ViewfinderFrame()
+                if (polaroid) PolaroidViewfinderMask(Modifier.fillMaxSize()) else ViewfinderFrame()
 
                 // Toucher = mise au point à cet endroit
                 Box(
@@ -583,6 +599,7 @@ fun CameraScreen(
             // ================= Bande de réglages =================
             val strip = listOf(
                 Tab.Recipe to (recipe.name + if (modified) " •" else ""),
+                Tab.Format to if (polaroid) "POLAROID" else "3:4",
                 Tab.Lens to (lensSel?.label ?: "1×"),
                 Tab.Speed to if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO",
                 Tab.Iso to if (settings.manual) settings.iso.toString() else "AUTO",
@@ -671,6 +688,13 @@ fun CameraScreen(
                             }
                         }
                     }
+
+                    Tab.Format -> ValueRow(
+                        values = listOf(false, true),
+                        selected = polaroid,
+                        label = { if (it) "Polaroid ▢" else "Standard 3:4" },
+                        onPick = { setPolaroid(it) },
+                    )
 
                     Tab.Lens -> ValueRow(
                         values = lenses,
@@ -873,6 +897,10 @@ fun CameraScreen(
                 }
             }
         }
+    }
+
+    // Tirage Polaroid qui se développe après la prise de vue
+    developing?.let { uri -> PolaroidDeveloping(uri) { developing = null } }
     }
 }
 

@@ -81,6 +81,22 @@ object Presets {
         ),
         // --- Pellicules ---
         FilmPreset(
+            id = "polaroid600", name = "Polaroid 600", subtitle = "instantané · doux, cyan",
+            exposure = 0.12f, contrast = 0.88f, saturation = 0.86f, fade = 0.07f,
+            gain = v(1.03f, 1.0f, 0.95f),
+            shadowTint = v(-0.012f, 0.02f, 0.03f),
+            highlightTint = v(0.03f, 0.018f, -0.012f),
+            grain = 0.06f, grainSize = 1.3f, vignette = 0.32f,
+        ),
+        FilmPreset(
+            id = "sx70", name = "SX-70", subtitle = "instantané · chaud, délavé",
+            exposure = 0.15f, contrast = 0.84f, saturation = 0.78f, fade = 0.1f,
+            gain = v(1.08f, 1.0f, 0.87f),
+            shadowTint = v(0.01f, 0.012f, 0.02f),
+            highlightTint = v(0.035f, 0.02f, -0.015f),
+            grain = 0.07f, grainSize = 1.4f, vignette = 0.4f,
+        ),
+        FilmPreset(
             id = "portra400", name = "Portra 400", subtitle = "ISO 400 · portrait",
             contrast = 0.95f, saturation = 0.92f, fade = 0.025f, exposure = 0.1f,
             gain = v(1.03f, 1.0f, 0.96f),

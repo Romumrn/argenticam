@@ -17,7 +17,7 @@ import java.util.Locale
 object PhotoPipeline {
 
     /** Retourne l'Uri de la photo enregistrée. À appeler hors du thread principal. */
-    fun develop(context: Context, image: ImageProxy, params: RenderParams, name: String): Uri {
+    fun develop(context: Context, image: ImageProxy, params: RenderParams, name: String, polaroid: Boolean = false): Uri {
         val rotation = image.imageInfo.rotationDegrees
         val buffer = image.planes[0].buffer
         val bytes = ByteArray(buffer.remaining())
@@ -33,6 +33,21 @@ object PhotoPipeline {
             )
             bmp.recycle()
             bmp = rotated
+        }
+
+        if (polaroid) {
+            // carré visé dans le viseur, développé, puis posé sur le cadre papier
+            val square = Polaroid.cropSquare(bmp)
+            if (square !== bmp) bmp.recycle()
+            val developed = if (params.strength <= 0f) square else FilmProcessor.process(square, params)
+            if (developed !== square) square.recycle()
+            bmp = Polaroid.compose(developed)
+            developed.recycle()
+            try {
+                return save(context, bmp, "polaroid-$name")
+            } finally {
+                bmp.recycle()
+            }
         }
 
         val result = if (params.strength <= 0f) bmp else FilmProcessor.process(bmp, params)

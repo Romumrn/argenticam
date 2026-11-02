@@ -44,6 +44,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `PhotoPipeline.kt` | JPEG CameraX → rotation → shader → MediaStore (`Pictures/ArgentiCam`) |
 | `LutCache.kt` | Chargement des LUT 3D depuis `assets/luts/` |
 | `RetroDial.kt` | La molette rétro (crans, vibration, inertie) |
+| `Polaroid.kt` | Mode Polaroid : géométrie (Polaroid 600), recadrage carré, cadre papier, masque du viseur, développement animé |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée, MediaStore, compteur de rouleau |
 
 ### Chaîne de rendu
@@ -68,6 +69,10 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
 - **Réglages manuels** : beaucoup de téléphones (Xiaomi notamment) n'autorisent pas les applis
   tierces à régler vitesse/ISO/mise au point. Toujours vérifier `CameraCaps` et comparer avec
   `LiveReadout` (ce que le capteur applique vraiment) plutôt que de supposer que ça marche.
+- **Mode Polaroid** : le carré visible dans le viseur (`Polaroid.holeRect`) et le recadrage de la photo
+  (`Polaroid.cropFraction`) viennent de la même géométrie — garder ce lien (ce qu'on voit = ce qu'on obtient).
+  Le shader reçoit `uFrame` pour centrer grain et vignettage sur le carré (aperçu) ; la photo est recadrée *avant*
+  le shader, donc `FULL_FRAME`.
 - **Balance des blancs** : `AUTO` ou `KELVIN`. En Kelvin, le téléphone est calé en lumière du jour
   et le shader convertit vers la température choisie (`kelvinGain` dans `Recipe.kt`).
 - Pas de `AnimatedVisibility` directement dans un `Box` imbriqué dans un `Column` (conflit de

@@ -9,7 +9,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 **Recettes façon Fujifilm**
 - **Simulations Fujifilm mesurées** (LUT 3D construites à partir des profils Camera Matching Fuji) : Provia, Velvia, Astia, Classic Chrome, Reala Ace, Pro Neg Hi, Pro Neg Std, Classic Neg, Nostalgic Neg, Eterna, Bleach Bypass
 - **Acros** et **Monochrome**, avec les filtres N&B Jaune / Rouge / Vert et la teinte monochrome chaud/froid et magenta/vert
-- Pellicules argentiques (approximations faites main) : Portra 400, Gold 200, Superia 400, Tri-X 400, CineStill 800T, Ektachrome, Lomo, et Original
+- Pellicules argentiques (approximations faites main) : Polaroid 600, SX-70, Portra 400, Gold 200, Superia 400, Tri-X 400, CineStill 800T, Ektachrome, Lomo, et Original
 - Quelques recettes prêtes à l'emploi : Kodachrome 64, Portra (recette), Nostalgie 70s, Acros +R, Nuit tungstène
 - **Crée et sauvegarde tes propres recettes**, avec l'aperçu en direct pendant l'édition. Tous les réglages d'un boîtier Fuji :
   - Effet grain (Off / Faible / Fort, petit ou gros), Color Chrome, Color Chrome FX Bleu
@@ -24,6 +24,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - **Molette rétro** pour la vitesse (au tiers de diaphragme), l'ISO et l'EV, avec un dial **A / M**
 - **Lecture réelle du capteur** : l'écran affiche la vitesse, l'ISO et la distance de mise au point que le téléphone applique *vraiment*, et prévient s'il ignore un réglage manuel
 - Choix de l'**objectif** (ultra grand-angle, principal, télé) selon ce que le téléphone expose
+- **Mode Polaroid** : cadre Polaroid 600 dans le viseur (le carré visé = la photo), tirage carré posé sur un cadre papier crème aux vraies proportions (88 × 107 mm), et **développement animé** après la prise de vue
 - Compteur de poses façon rouleau de **36 vues**, **galerie intégrée** (grille, visionneuse, partage, suppression)
 - Photos ~12 Mpx enregistrées dans `Pictures/ArgentiCam`
 
@@ -76,6 +77,7 @@ CameraX ImageCapture ──► JPEG ──► Bitmap ──► shader "film" (EG
 | `CameraScreen.kt` | Écran caméra (Jetpack Compose) : viseur, bande de réglages, déclencheur |
 | `Manual.kt` | Réglages manuels via Camera2 (ISO, vitesse, EV, balance des blancs, focus) et détection des objectifs |
 | `RetroDial.kt` | La molette rétro |
+| `Polaroid.kt` | Mode Polaroid : géométrie du cadre, recadrage, composition du tirage, cadre du viseur, animation de développement |
 | `Recipe.kt` | Modèle des recettes, recettes intégrées, sauvegarde, conversion en paramètres de rendu |
 | `RecipeEditor.kt` | L'éditeur de recettes |
 | `LutCache.kt`, `assets/luts/` | LUT 3D des simulations Fujifilm |
