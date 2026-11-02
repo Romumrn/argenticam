@@ -7,7 +7,7 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
 /**
- * Programme OpenGL qui applique un [Look] à une texture.
+ * Programme OpenGL qui applique une recette ([RenderParams]) à une texture.
  *
  * Le même fragment shader sert pour l'aperçu live (texture caméra "external OES")
  * et pour la photo finale (texture 2D issue d'un Bitmap) : le rendu est identique.
@@ -46,16 +46,19 @@ class FilmProgram(private val external: Boolean) {
     /**
      * @param texMatrix matrice 4x4 qui convertit les coordonnées d'affichage en coordonnées texture.
      * @param aspect largeur/hauteur de l'image de sortie.
+     * @param zoom loupe de mise au point (1 = pas de loupe), centrée sur [zoomX],[zoomY] (0..1, origine en bas à gauche).
      */
     fun draw(
         texId: Int,
         texMatrix: FloatArray,
-        look: Look,
+        p: RenderParams,
         aspect: Float,
         seed: Float,
         peaking: Boolean = false,
+        zoom: Float = 1f,
+        zoomX: Float = 0.5f,
+        zoomY: Float = 0.5f,
     ) {
-        val p = look.preset
         val target = if (external) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D
 
         GLES20.glUseProgram(program)
@@ -64,27 +67,38 @@ class FilmProgram(private val external: Boolean) {
         GLES20.glUniform1i(loc("uTex"), 0)
 
         GLES20.glUniformMatrix4fv(loc("uTexMatrix"), 1, false, texMatrix, 0)
-        // Partie linéaire 2x2 de la matrice, pour décaler les coordonnées texture (halation).
+        // Partie linéaire 2x2 de la matrice, pour décaler les coordonnées texture (flous, halation...).
+        val z = zoom.coerceAtLeast(1f)
         GLES20.glUniformMatrix2fv(
             loc("uLin"), 1, false,
-            floatArrayOf(texMatrix[0], texMatrix[1], texMatrix[4], texMatrix[5]), 0,
+            floatArrayOf(texMatrix[0] / z, texMatrix[1] / z, texMatrix[4] / z, texMatrix[5] / z), 0,
         )
+        val half = 0.5f / z
+        GLES20.glUniform1f(loc("uZoom"), z)
+        GLES20.glUniform2f(loc("uZoomCenter"), zoomX.coerceIn(half, 1f - half), zoomY.coerceIn(half, 1f - half))
 
         GLES20.glUniform1f(loc("uAspect"), aspect)
         GLES20.glUniform1f(loc("uSeed"), seed)
-        GLES20.glUniform1f(loc("uStrength"), look.strength)
+        GLES20.glUniform1f(loc("uStrength"), p.strength)
         GLES20.glUniform1f(loc("uExposure"), p.exposure)
         GLES20.glUniform1f(loc("uContrast"), p.contrast)
         GLES20.glUniform1f(loc("uSaturation"), p.saturation)
         GLES20.glUniform1f(loc("uFade"), p.fade)
-        GLES20.glUniform1f(loc("uBw"), if (p.bw) 1f else 0f)
+        GLES20.glUniform1f(loc("uBw"), p.bw)
         GLES20.glUniform3fv(loc("uGain"), 1, p.gain, 0)
         GLES20.glUniform3fv(loc("uShadowTint"), 1, p.shadowTint, 0)
         GLES20.glUniform3fv(loc("uHighlightTint"), 1, p.highlightTint, 0)
-        GLES20.glUniform1f(loc("uGrain"), p.grain * look.grainScale)
+        GLES20.glUniform1f(loc("uGrain"), p.grain)
         GLES20.glUniform1f(loc("uGrainCells"), 1100f / p.grainSize)
         GLES20.glUniform1f(loc("uVignette"), p.vignette)
         GLES20.glUniform1f(loc("uHalation"), p.halation)
+        GLES20.glUniform1f(loc("uSharp"), p.sharpness)
+        GLES20.glUniform1f(loc("uClarity"), p.clarity)
+        GLES20.glUniform1f(loc("uChrome"), p.chrome)
+        GLES20.glUniform1f(loc("uChromeBlue"), p.chromeBlue)
+        GLES20.glUniform1f(loc("uDR"), p.dynamicRange)
+        GLES20.glUniform1f(loc("uHighlight"), p.highlight)
+        GLES20.glUniform1f(loc("uShadow"), p.shadow)
         GLES20.glUniform1f(loc("uPeaking"), if (peaking) 1f else 0f)
 
         val aPos = GLES20.glGetAttribLocation(program, "aPos")
@@ -120,12 +134,15 @@ class FilmProgram(private val external: Boolean) {
         private const val VERTEX = """
 attribute vec2 aPos;
 uniform mat4 uTexMatrix;
+uniform float uZoom;
+uniform vec2 uZoomCenter;
 varying vec2 vUv;
 varying vec2 vTex;
 void main() {
     gl_Position = vec4(aPos, 0.0, 1.0);
     vUv = aPos * 0.5 + 0.5;
-    vTex = (uTexMatrix * vec4(vUv, 0.0, 1.0)).xy;
+    vec2 s = uZoomCenter + (vUv - uZoomCenter) / uZoom;
+    vTex = (uTexMatrix * vec4(s, 0.0, 1.0)).xy;
 }
 """
 
@@ -150,9 +167,18 @@ uniform float uGrain;
 uniform float uGrainCells;
 uniform float uVignette;
 uniform float uHalation;
+uniform float uSharp;
+uniform float uClarity;
+uniform float uChrome;
+uniform float uChromeBlue;
+uniform float uDR;
+uniform float uHighlight;
+uniform float uShadow;
 uniform float uPeaking;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+vec3 tap(vec2 displayOffset) { return texture2D(uTex, vTex + uLin * displayOffset).rgb; }
 
 float hash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -164,35 +190,83 @@ void main() {
     vec3 src = texture2D(uTex, vTex).rgb;
     vec3 c = src;
 
+    // Netteté : masque flou sur un petit rayon (négatif = adoucit)
+    if (abs(uSharp) > 0.001) {
+        vec2 o = vec2(0.0012 / uAspect, 0.0012);
+        vec3 b = (tap(vec2(o.x, 0.0)) + tap(vec2(-o.x, 0.0)) + tap(vec2(0.0, o.y)) + tap(vec2(0.0, -o.y))) * 0.25;
+        c = clamp(c + (c - b) * uSharp * 0.9, 0.0, 1.0);
+    }
+
+    // Clarté : contraste local des tons moyens sur un grand rayon
+    if (abs(uClarity) > 0.001) {
+        float lb = 0.0;
+        for (int i = 0; i < 6; i++) {
+            float ang = float(i) * 1.047198;
+            vec2 dir = vec2(cos(ang) / uAspect, sin(ang));
+            vec2 dir2 = vec2(cos(ang + 0.5236) / uAspect, sin(ang + 0.5236));
+            lb += luma(tap(dir * 0.01)) + luma(tap(dir2 * 0.022));
+        }
+        lb /= 12.0;
+        float l0 = luma(c);
+        float mid = 1.0 - abs(l0 - 0.5) * 2.0;
+        c = clamp(c + (l0 - lb) * uClarity * 0.45 * mid, 0.0, 1.0);
+    }
+
     // Halation : les hautes lumières bavent en rouge-orange (absence de couche anti-halo).
     if (uHalation > 0.001) {
         float glow = 0.0;
         for (int i = 0; i < 8; i++) {
             float ang = float(i) * 0.785398;
             vec2 dir = vec2(cos(ang) / uAspect, sin(ang));
-            vec3 s1 = texture2D(uTex, vTex + uLin * (dir * 0.012)).rgb;
-            vec3 s2 = texture2D(uTex, vTex + uLin * (dir * 0.032)).rgb;
-            glow += max(luma(s1) - 0.65, 0.0) + max(luma(s2) - 0.65, 0.0);
+            glow += max(luma(tap(dir * 0.012)) - 0.65, 0.0) + max(luma(tap(dir * 0.032)) - 0.65, 0.0);
         }
         glow = glow / 16.0 / 0.35;
         c += uHalation * glow * vec3(1.0, 0.3, 0.12);
     }
 
-    // Balance des blancs + exposition
+    // Balance des blancs (Kelvin + décalage R/B) + exposition
     c *= uGain;
     c *= exp2(uExposure);
+
+    // Plage dynamique (DR200 / DR400) : on retient les hautes lumières, on débouche un peu les ombres
+    if (uDR > 0.0) {
+        float knee = 0.78 - 0.1 * uDR;
+        vec3 over = max(c - knee, 0.0);
+        c = c - over * (0.3 * uDR) / (1.0 + over * 2.0);
+        c += (1.0 - smoothstep(0.0, 0.3, luma(c))) * 0.02 * uDR;
+    }
     c = clamp(c, 0.0, 1.0);
 
-    // N&B / saturation
-    float l = luma(c);
-    c = mix(c, vec3(l), uBw);
+    // N&B / saturation (paramètre Couleur)
+    c = mix(c, vec3(luma(c)), uBw);
     c = mix(vec3(luma(c)), c, uSaturation);
+    c = clamp(c, 0.0, 1.0);
 
-    // Contraste autour du gris moyen + léger pied/épaule façon pellicule
+    // Color Chrome : les couleurs très saturées gagnent en densité et en profondeur
+    if (uChrome > 0.0) {
+        float sat = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+        float m = smoothstep(0.2, 0.6, sat) * uChrome;
+        c = mix(vec3(luma(c)), c, 1.0 + 0.25 * m);
+        c *= 1.0 - 0.16 * m;
+    }
+    // Color Chrome FX Bleu : bleus plus profonds
+    if (uChromeBlue > 0.0) {
+        float m = smoothstep(0.03, 0.25, c.b - max(c.r, c.g)) * uChromeBlue;
+        c *= 1.0 - 0.2 * m;
+        c.b += 0.035 * m;
+    }
+    c = clamp(c, 0.0, 1.0);
+
+    // Contraste autour du gris moyen + pied/épaule façon pellicule
     c = clamp((c - 0.45) * uContrast + 0.45, 0.0, 1.0);
-    c = mix(c, c * c * (3.0 - 2.0 * c), 0.25);
+    c = mix(c, c * c * (3.0 - 2.0 * c), 0.25 * clamp(abs(uContrast - 1.0) * 6.0, 0.0, 1.0));
 
-    // Split toning
+    // Tonalité des hautes lumières / des ombres (+ = plus dur, - = plus doux)
+    float l = luma(c);
+    c += uHighlight * 0.045 * smoothstep(0.45, 1.0, l);
+    c -= uShadow * 0.045 * (1.0 - smoothstep(0.0, 0.5, l));
+
+    // Split toning de la pellicule de base
     l = luma(c);
     c += uShadowTint * (1.0 - smoothstep(0.0, 0.55, l));
     c += uHighlightTint * smoothstep(0.45, 1.0, l);
@@ -222,10 +296,8 @@ void main() {
     // Focus peaking : les contours nets s'allument en rouge (aide à la mise au point manuelle)
     if (uPeaking > 0.5) {
         vec2 px = vec2(0.0018 / uAspect, 0.0018);
-        float gx = luma(texture2D(uTex, vTex + uLin * vec2(px.x, 0.0)).rgb)
-                 - luma(texture2D(uTex, vTex - uLin * vec2(px.x, 0.0)).rgb);
-        float gy = luma(texture2D(uTex, vTex + uLin * vec2(0.0, px.y)).rgb)
-                 - luma(texture2D(uTex, vTex - uLin * vec2(0.0, px.y)).rgb);
+        float gx = luma(tap(vec2(px.x, 0.0))) - luma(tap(vec2(-px.x, 0.0)));
+        float gy = luma(tap(vec2(0.0, px.y))) - luma(tap(vec2(0.0, -px.y)));
         float edge = smoothstep(0.07, 0.16, length(vec2(gx, gy)));
         c = mix(c, vec3(1.0, 0.18, 0.12), edge * 0.9);
     }

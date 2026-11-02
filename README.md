@@ -6,17 +6,28 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 
 ## Fonctionnalités
 
-- Aperçu caméra en direct avec le look appliqué (shader OpenGL)
-- 12 looks inspirés de pellicules : Portra 400, Gold 200, Superia 400, Velvia 50, Classic Chrome, Classic Neg, Acros, Tri-X 400, CineStill 800T, Ektachrome, Lomo, et Original (sans filtre)
-- Réglage de l'**intensité** de l'effet et de la quantité de **grain**
-- **Réglages manuels façon Fujifilm** : vitesse d'obturation, ISO, correction d'exposition (EV), balance des blancs, mise au point manuelle, et un dial **A / M** (auto / manuel). Seules les valeurs que le capteur du téléphone accepte sont proposées.
-- **Molette rétro** moletée pour la vitesse, l'ISO et l'EV : on la tourne au doigt, elle clique de cran en cran (vibration) et se cale sur la valeur
-- **Mise au point manuelle** avec une bague graduée en distance (∞ → 10 cm) et **focus peaking** (contours nets en rouge)
-- **Choix de l'objectif** : ultra grand-angle, principal, télé, selon ce que le téléphone expose
-- Compteur de poses façon rouleau de **36 vues**
-- **Galerie intégrée** : miniature de la dernière photo, grille, visionneuse avec swipe, partage et suppression
-- Photos ~12 Mpx traitées en pleine résolution avec le même shader que l'aperçu
-- Enregistrement dans la galerie : `Pictures/ArgentiCam`
+**Recettes façon Fujifilm**
+- 12 pellicules de base : Portra 400, Gold 200, Superia 400, Velvia 50, Classic Chrome, Classic Neg, Acros, Tri-X 400, CineStill 800T, Ektachrome, Lomo, Original
+- Quelques recettes prêtes à l'emploi : Kodachrome 64, Portra (recette), Nostalgie 70s, Nuit tungstène
+- **Crée et sauvegarde tes propres recettes**, avec l'aperçu en direct pendant l'édition. Tous les réglages d'un boîtier Fuji :
+  - Effet grain (Off / Faible / Fort, petit ou gros), Color Chrome, Color Chrome FX Bleu
+  - Balance des blancs (Auto, Soleil, Nuageux, Tungstène, Fluo ou **Kelvin** de 2500 à 10000 K) et **décalage R/B** de -9 à +9
+  - Plage dynamique DR100 / DR200 / DR400, Hautes lumières et Ombres de -2 à +4, Couleur, Netteté, Clarté, Réduction du bruit
+  - En plus : vignettage, halation, intensité du film
+
+**Prise de vue**
+- Aperçu en direct avec la recette appliquée (shader OpenGL), photo développée avec exactement le même shader
+- **Mise au point au doigt** : touche le viseur pour faire le point à cet endroit, en **AF-S** (point verrouillé, « AF-L ») ou **AF-C** (suivi continu)
+- **MF** : bague de mise au point graduée en distance, **loupe ×3** pendant qu'on tourne la bague, **focus peaking**
+- **Molette rétro** pour la vitesse (au tiers de diaphragme), l'ISO et l'EV, avec un dial **A / M**
+- **Lecture réelle du capteur** : l'écran affiche la vitesse, l'ISO et la distance de mise au point que le téléphone applique *vraiment*, et prévient s'il ignore un réglage manuel
+- Choix de l'**objectif** (ultra grand-angle, principal, télé) selon ce que le téléphone expose
+- Compteur de poses façon rouleau de **36 vues**, **galerie intégrée** (grille, visionneuse, partage, suppression)
+- Photos ~12 Mpx enregistrées dans `Pictures/ArgentiCam`
+
+### Limites selon les téléphones
+
+Beaucoup de constructeurs (Xiaomi, et d'autres) ne laissent pas les applis tierces régler la vitesse, l'ISO ou la mise au point à la main. L'appli détecte ces limites et l'affiche. Dans ce cas, utilise l'EV et la mise au point au toucher (AF-S).
 
 Les noms de pellicules sont cités à titre descriptif : les looks sont des approximations faites à la main, pas des reproductions officielles.
 
@@ -57,17 +68,20 @@ CameraX ImageCapture ──► JPEG ──► Bitmap ──► shader "film" (EG
 | `CameraScreen.kt` | Écran caméra (Jetpack Compose) : viseur, bande de réglages, déclencheur |
 | `Manual.kt` | Réglages manuels via Camera2 (ISO, vitesse, EV, balance des blancs, focus) et détection des objectifs |
 | `RetroDial.kt` | La molette rétro |
+| `Recipe.kt` | Modèle des recettes, recettes intégrées, sauvegarde, conversion en paramètres de rendu |
+| `RecipeEditor.kt` | L'éditeur de recettes |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée et lecture des photos dans MediaStore |
 
 Le shader enchaîne : halation, balance des blancs et exposition, noir et blanc et saturation, contraste avec pied et épaule, teintes dans les ombres et les hautes lumières, noirs relevés, grain (plus visible dans les tons moyens, qui « vit » environ 12 fois par seconde), vignettage, puis mélange avec l'original selon l'intensité.
 
-## Ajouter un look
+## Ajouter une pellicule de base
 
-Ajoute une entrée dans la liste de `Presets.all` (`FilmPreset.kt`). Tous les paramètres ont une valeur par défaut neutre, il suffit de régler ceux qui comptent.
+Ajoute une entrée dans `Presets.all` (`FilmPreset.kt`). Pour une recette intégrée, ajoute-la dans `Recipes.builtIns` (`Recipe.kt`). Les recettes perso se créent directement dans l'appli.
 
 ## Pistes pour la suite
 
-- Caméra frontale, zoom, mise au point au toucher, flash, pincement pour zoomer, histogramme
+- Caméra frontale, flash, pincement pour zoomer, histogramme
+- Partage et import de recettes
 - Import et traitement de photos existantes
 - Date imprimée façon argentique, cadres, bords de pellicule
 - Courbes plus fidèles, ou LUTs 3D

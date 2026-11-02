@@ -31,17 +31,24 @@ class FilmPreviewView(context: Context) : GLSurfaceView(context) {
         renderMode = RENDERMODE_WHEN_DIRTY
     }
 
-    fun setLook(look: Look, peaking: Boolean = false) {
-        renderer.look = look
+    /** Paramètres de rendu + aides au cadrage (peaking, loupe). */
+    fun setRender(params: RenderParams, peaking: Boolean, zoom: Float, zoomX: Float, zoomY: Float) {
+        renderer.params = params
         renderer.peaking = peaking
+        renderer.zoom = zoom
+        renderer.zoomX = zoomX
+        renderer.zoomY = zoomY
         requestRender()
     }
 }
 
 private class FilmRenderer(private val host: GLSurfaceView) : GLSurfaceView.Renderer {
 
-    @Volatile var look: Look = Look(Presets.original)
+    @Volatile var params: RenderParams = Recipes.builtIns[0].render()
     @Volatile var peaking: Boolean = false
+    @Volatile var zoom: Float = 1f
+    @Volatile var zoomX: Float = 0.5f
+    @Volatile var zoomY: Float = 0.5f
 
     @Volatile private var pendingRequest: SurfaceRequest? = null
 
@@ -134,7 +141,7 @@ private class FilmRenderer(private val host: GLSurfaceView) : GLSurfaceView.Rend
 
         // Le grain "vit" à ~12 images/s, comme un vrai grain qui change à chaque photogramme.
         val seed = ((System.nanoTime() - startNs) / 83_000_000L % 1000L).toFloat() * 1.618f
-        prog.draw(texId, texMatrix, look, viewW.toFloat() / viewH, seed, peaking)
+        prog.draw(texId, texMatrix, params, viewW.toFloat() / viewH, seed, peaking, zoom, zoomX, zoomY)
     }
 
 }

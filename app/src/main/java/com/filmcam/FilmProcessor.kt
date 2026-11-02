@@ -12,14 +12,14 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * Applique un [Look] à un Bitmap en pleine résolution, hors écran (EGL pbuffer),
+ * Applique une recette ([RenderParams]) à un Bitmap en pleine résolution, hors écran (EGL pbuffer),
  * avec exactement le même shader que l'aperçu.
  *
  * À appeler depuis un thread d'arrière-plan.
  */
 object FilmProcessor {
 
-    fun process(src: Bitmap, look: Look): Bitmap {
+    fun process(src: Bitmap, params: RenderParams): Bitmap {
         val w = src.width
         val h = src.height
 
@@ -68,7 +68,7 @@ object FilmProcessor {
             // Ligne 0 du Bitmap = t=0 ; la matrice identité l'envoie en bas du framebuffer,
             // et glReadPixels lit de bas en haut : le résultat sort donc à l'endroit.
             val seed = (System.nanoTime() % 1000L).toFloat() * 1.618f
-            program.draw(tex[0], FilmProgram.IDENTITY, look, w.toFloat() / h, seed)
+            program.draw(tex[0], FilmProgram.IDENTITY, params, w.toFloat() / h, seed)
 
             val buf = ByteBuffer.allocateDirect(w * h * 4).order(ByteOrder.nativeOrder())
             GLES20.glReadPixels(0, 0, w, h, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, buf)

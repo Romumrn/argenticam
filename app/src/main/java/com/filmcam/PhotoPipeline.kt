@@ -17,7 +17,7 @@ import java.util.Locale
 object PhotoPipeline {
 
     /** Retourne l'Uri de la photo enregistrée. À appeler hors du thread principal. */
-    fun develop(context: Context, image: ImageProxy, look: Look): Uri {
+    fun develop(context: Context, image: ImageProxy, params: RenderParams, name: String): Uri {
         val rotation = image.imageInfo.rotationDegrees
         val buffer = image.planes[0].buffer
         val bytes = ByteArray(buffer.remaining())
@@ -35,20 +35,21 @@ object PhotoPipeline {
             bmp = rotated
         }
 
-        val result = if (look.preset == Presets.original) bmp else FilmProcessor.process(bmp, look)
+        val result = if (params.strength <= 0f) bmp else FilmProcessor.process(bmp, params)
         if (result !== bmp) bmp.recycle()
 
         try {
-            return save(context, result, look.preset)
+            return save(context, result, name)
         } finally {
             result.recycle()
         }
     }
 
-    private fun save(context: Context, bmp: Bitmap, preset: FilmPreset): Uri {
+    private fun save(context: Context, bmp: Bitmap, name: String): Uri {
+        val slug = name.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "photo" }
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "ARGENTICAM_${preset.id}_$stamp.jpg")
+            put(MediaStore.Images.Media.DISPLAY_NAME, "ARGENTICAM_${slug}_$stamp.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/ArgentiCam")
             put(MediaStore.Images.Media.IS_PENDING, 1)

@@ -63,6 +63,7 @@ fun RetroDial(
     spacing: Dp = 56.dp,
     enabled: Boolean = true,
     onTouched: () -> Unit = {},
+    onReleased: () -> Unit = {},
 ) {
     if (count <= 0) return
     val density = LocalDensity.current
@@ -129,6 +130,7 @@ fun RetroDial(
                     }
                     onIndexChange(target)
                     settleTo(target.toFloat())
+                    onReleased()
                 },
             ),
     ) {

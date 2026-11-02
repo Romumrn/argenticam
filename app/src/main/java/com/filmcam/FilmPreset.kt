@@ -29,17 +29,10 @@ data class FilmPreset(
     val halation: Float = 0f,
 )
 
-/** Preset + réglages utilisateur. */
-data class Look(
-    val preset: FilmPreset,
-    /** Mélange avec l'image originale : 0 = aucun effet, 1 = plein effet. */
-    val strength: Float = 1f,
-    /** Multiplicateur du grain. */
-    val grainScale: Float = 1f,
-)
-
 object Presets {
     private fun v(r: Float, g: Float, b: Float) = floatArrayOf(r, g, b)
+
+    fun byId(id: String): FilmPreset = all.firstOrNull { it.id == id } ?: all[1]
 
     val original = FilmPreset(
         id = "original", name = "Original", subtitle = "sans filtre",
