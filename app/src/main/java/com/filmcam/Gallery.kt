@@ -25,7 +25,11 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,12 +116,17 @@ fun PhotoViewer(
     val pagerState = rememberPagerState(initialPage = startIndex.coerceIn(0, (photos.size - 1).coerceAtLeast(0))) {
         photos.size
     }
+    var zoomed by remember { mutableStateOf(false) }
+    // en changeant de photo, la nouvelle n'est pas zoomée
+    LaunchedEffect(pagerState.currentPage) { zoomed = false }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
             state = pagerState,
             key = { photos.getOrNull(it)?.id ?: it },
             modifier = Modifier.fillMaxSize(),
+            // pendant un zoom, glisser déplace l'image au lieu de changer de photo
+            userScrollEnabled = !zoomed,
         ) { page ->
             val photo = photos.getOrNull(page)
             if (photo != null) {
@@ -128,7 +137,11 @@ fun PhotoViewer(
                 }
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     bitmap?.let {
-                        Image(it, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                        ZoomableImage(
+                            it,
+                            modifier = Modifier.fillMaxSize(),
+                            onZoomChanged = { z -> if (page == pagerState.currentPage) zoomed = z },
+                        )
                     }
                 }
             }

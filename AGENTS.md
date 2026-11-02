@@ -46,6 +46,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `RetroDial.kt` | La molette rétro (crans, vibration, inertie) |
 | `Polaroid.kt` | Mode Polaroid : géométrie (Polaroid 600), recadrage carré, cadre papier, masque du viseur, développement animé |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée, MediaStore, compteur de rouleau |
+| `ZoomableImage.kt` | Image zoomable de la visionneuse (pincement, déplacement, double-tap ; ne consomme pas le swipe du pager à ×1) |
 
 ### Chaîne de rendu
 

@@ -25,7 +25,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - **Lecture réelle du capteur** : l'écran affiche la vitesse, l'ISO et la distance de mise au point que le téléphone applique *vraiment*, et prévient s'il ignore un réglage manuel
 - Choix de l'**objectif** (ultra grand-angle, principal, télé) selon ce que le téléphone expose
 - **Mode Polaroid** : cadre Polaroid 600 dans le viseur (le carré visé = la photo), tirage carré posé sur un cadre papier crème aux vraies proportions (88 × 107 mm), et **développement animé** après la prise de vue
-- Compteur de poses façon rouleau de **36 vues**, **galerie intégrée** (grille, visionneuse, partage, suppression)
+- Compteur de poses façon rouleau de **36 vues**, **galerie intégrée** (grille, visionneuse avec **zoom** au pincement et au double-tap, partage, suppression)
 - Photos ~12 Mpx enregistrées dans `Pictures/ArgentiCam`
 
 ### Limites selon les téléphones
