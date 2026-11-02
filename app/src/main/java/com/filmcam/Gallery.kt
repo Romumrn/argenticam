@@ -44,6 +44,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** Taille de l'aperçu dans la visionneuse, et plafond de la pleine résolution (limite de texture GPU). */
+private const val PREVIEW_PX = 2400
+private const val FULL_PX = 4096
+
 /** Miniature chargée en arrière-plan. */
 @Composable
 fun PhotoThumb(photo: Photo, px: Int, modifier: Modifier = Modifier) {
@@ -130,17 +134,41 @@ fun PhotoViewer(
         ) { page ->
             val photo = photos.getOrNull(page)
             if (photo != null) {
-                val bitmap: ImageBitmap? by produceState<ImageBitmap?>(null, photo.uri) {
+                // Aperçu léger pour l'affichage normal...
+                val preview: ImageBitmap? by produceState<ImageBitmap?>(null, photo.uri) {
                     value = withContext(Dispatchers.IO) {
-                        PhotoLibrary.decode(context, photo.uri, 2400)?.asImageBitmap()
+                        PhotoLibrary.decode(context, photo.uri, PREVIEW_PX)?.asImageBitmap()
+                    }
+                }
+                // ...et pleine résolution chargée seulement au premier zoom (libérée en quittant la photo).
+                var wantFull by remember(photo.id) { mutableStateOf(false) }
+                val full: ImageBitmap? by produceState<ImageBitmap?>(null, photo.uri, wantFull) {
+                    value = if (wantFull) {
+                        withContext(Dispatchers.IO) { PhotoLibrary.decode(context, photo.uri, FULL_PX)?.asImageBitmap() }
+                    } else {
+                        null
                     }
                 }
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    bitmap?.let {
+                    (full ?: preview)?.let {
                         ZoomableImage(
                             it,
                             modifier = Modifier.fillMaxSize(),
-                            onZoomChanged = { z -> if (page == pagerState.currentPage) zoomed = z },
+                            onZoomChanged = { z ->
+                                if (page == pagerState.currentPage) zoomed = z
+                                if (z) wantFull = true
+                            },
+                        )
+                    }
+                    if (wantFull && full == null) {
+                        Text(
+                            "Chargement HD…",
+                            color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 28.dp)
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
                         )
                     }
                 }
