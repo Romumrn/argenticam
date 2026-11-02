@@ -29,6 +29,7 @@ import androidx.core.content.ContextCompat
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LutCache.init(assets)
         setContent {
             Box(Modifier.fillMaxSize().background(Color.Black)) {
                 PermissionGate()

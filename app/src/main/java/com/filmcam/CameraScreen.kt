@@ -300,20 +300,25 @@ fun CameraScreen(
     }
 
     // Avertit si le téléphone ignore un réglage manuel (on compare demandé / réellement appliqué).
-    val mismatch = run {
-        val k = caps ?: return@run false
+    val mismatch: String? = run {
+        val k = caps ?: return@run null
         val r = readout
-        val expo = settings.manual && k.canManualExposure && (
-            (r.iso != null && abs(r.iso - settings.iso) > settings.iso * 0.3f) ||
-                (r.exposureNs != null && abs(r.exposureNs - settings.shutterNs) > settings.shutterNs * 0.3f)
-            )
-        val focus = settings.focusMode == FocusMode.MF && k.canManualFocus && r.focusDiopters != null &&
-            abs(r.focusDiopters - settings.focus * k.minFocusDistance) > 0.25f + 0.1f * k.minFocusDistance
-        expo || focus
+        val calib = k.focusCalibrated
+        when {
+            settings.manual && k.canManualExposure && r.iso != null && abs(r.iso - settings.iso) > settings.iso * 0.3f ->
+                "ISO demandé ${settings.iso} → réel ${r.iso}"
+            settings.manual && k.canManualExposure && r.exposureNs != null &&
+                abs(r.exposureNs - settings.shutterNs) > settings.shutterNs * 0.3f ->
+                "vitesse demandée ${shutterLabel(settings.shutterNs)} → réelle ${shutterLabel(r.exposureNs)}"
+            settings.focusMode == FocusMode.MF && k.canManualFocus && r.focusDiopters != null &&
+                abs(r.focusDiopters - settings.focus * k.minFocusDistance) > 0.25f + 0.1f * k.minFocusDistance ->
+                "MP demandée ${distanceLabel(settings.focus * k.minFocusDistance, calib)} → réelle ${distanceLabel(r.focusDiopters, calib)}"
+            else -> null
+        }
     }
     var showMismatch by remember { mutableStateOf(false) }
-    LaunchedEffect(mismatch) {
-        if (mismatch) {
+    LaunchedEffect(mismatch != null) {
+        if (mismatch != null) {
             delay(1500)
             showMismatch = true
         } else {
@@ -544,9 +549,9 @@ fun CameraScreen(
                             if (!mfActive && afLocked) "  ●" else "",
                         color = Amber.copy(alpha = 0.85f), fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
                     )
-                    if (showMismatch) {
+                    if (showMismatch && mismatch != null) {
                         Text(
-                            "⚠ le téléphone ignore ce réglage manuel",
+                            "⚠ ignoré par le téléphone : $mismatch",
                             color = Warn, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp),
                         )
                     }

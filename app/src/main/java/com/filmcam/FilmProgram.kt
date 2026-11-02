@@ -2,6 +2,7 @@ package com.filmcam
 
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
+import android.opengl.GLUtils
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -16,6 +17,7 @@ class FilmProgram(private val external: Boolean) {
 
     private val program: Int
     private val locs = HashMap<String, Int>()
+    private val lutTextures = HashMap<String, Int>()
 
     private val quad: FloatBuffer = ByteBuffer.allocateDirect(8 * 4)
         .order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
@@ -100,6 +102,16 @@ class FilmProgram(private val external: Boolean) {
         GLES20.glUniform1f(loc("uHighlight"), p.highlight)
         GLES20.glUniform1f(loc("uShadow"), p.shadow)
         GLES20.glUniform1f(loc("uPeaking"), if (peaking) 1f else 0f)
+        GLES20.glUniform3fv(loc("uBwMix"), 1, p.bwMix, 0)
+        GLES20.glUniform3fv(loc("uMonoTint"), 1, p.monoTint, 0)
+
+        // LUT 3D de la simulation, sur l'unité de texture 1
+        val lutTex = p.lut?.let { lutTexture(it) } ?: 0
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, lutTex)
+        GLES20.glUniform1i(loc("uLut"), 1)
+        GLES20.glUniform1f(loc("uLutOn"), if (lutTex != 0) 1f else 0f)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
 
         val aPos = GLES20.glGetAttribLocation(program, "aPos")
         GLES20.glEnableVertexAttribArray(aPos)
@@ -109,7 +121,28 @@ class FilmProgram(private val external: Boolean) {
         GLES20.glBindTexture(target, 0)
     }
 
+    private fun lutTexture(name: String): Int {
+        lutTextures[name]?.let { return it }
+        val bmp = LutCache.bitmap(name) ?: return 0
+        val ids = IntArray(1)
+        GLES20.glGenTextures(1, ids, 0)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE1)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, ids[0])
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        lutTextures[name] = ids[0]
+        return ids[0]
+    }
+
     fun release() {
+        if (lutTextures.isNotEmpty()) {
+            GLES20.glDeleteTextures(lutTextures.size, lutTextures.values.toIntArray(), 0)
+            lutTextures.clear()
+        }
         GLES20.glDeleteProgram(program)
     }
 
@@ -175,8 +208,25 @@ uniform float uDR;
 uniform float uHighlight;
 uniform float uShadow;
 uniform float uPeaking;
+uniform sampler2D uLut;
+uniform float uLutOn;
+uniform vec3 uBwMix;
+uniform vec3 uMonoTint;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+
+// LUT 3D 32x32x32 rangée en bande 1024x32 (x = b*32 + r, y = g), interpolation trilinéaire
+vec3 applyLut(vec3 c) {
+    c = clamp(c, 0.0, 1.0);
+    float b = c.b * 31.0;
+    float b0 = floor(b);
+    float b1 = min(b0 + 1.0, 31.0);
+    float x = (c.r * 31.0 + 0.5) / 1024.0;
+    float y = (c.g * 31.0 + 0.5) / 32.0;
+    vec3 s0 = texture2D(uLut, vec2(x + b0 / 32.0, y)).rgb;
+    vec3 s1 = texture2D(uLut, vec2(x + b1 / 32.0, y)).rgb;
+    return mix(s0, s1, b - b0);
+}
 
 vec3 tap(vec2 displayOffset) { return texture2D(uTex, vTex + uLin * displayOffset).rgb; }
 
@@ -237,8 +287,11 @@ void main() {
     }
     c = clamp(c, 0.0, 1.0);
 
-    // N&B / saturation (paramètre Couleur)
-    c = mix(c, vec3(luma(c)), uBw);
+    // Simulation de film mesurée (LUT 3D)
+    if (uLutOn > 0.5) c = applyLut(c);
+
+    // N&B (avec filtre de couleur) / saturation (paramètre Couleur)
+    c = mix(c, vec3(dot(c, uBwMix)), uBw);
     c = mix(vec3(luma(c)), c, uSaturation);
     c = clamp(c, 0.0, 1.0);
 
@@ -270,6 +323,12 @@ void main() {
     l = luma(c);
     c += uShadowTint * (1.0 - smoothstep(0.0, 0.55, l));
     c += uHighlightTint * smoothstep(0.45, 1.0, l);
+
+    // Teinte monochrome (chaud/froid, magenta/vert), surtout dans les tons moyens
+    if (uBw > 0.5) {
+        float lm = luma(c);
+        c += uMonoTint * 4.0 * lm * (1.0 - lm);
+    }
 
     // Noirs relevés (look mat)
     c = mix(vec3(uFade), vec3(1.0 - uFade * 0.5), clamp(c, 0.0, 1.0));

@@ -144,6 +144,27 @@ fun RecipeEditor(
                 }
             }
 
+            if (r.base().lut != null) {
+                Text(
+                    "Simulation mesurée : LUT de abpy/FujifilmCameraProfiles (CC BY-NC-SA 4.0)",
+                    color = Color.White.copy(alpha = 0.4f), fontSize = 10.sp,
+                    modifier = Modifier.padding(start = 16.dp, top = 6.dp),
+                )
+            }
+
+            if (r.base().bw) {
+                Section("NOIR ET BLANC")
+                SegRow("Filtre", BwFilter.entries, r.bwFilter, { it.label }) { onChange(r.copy(bwFilter = it)) }
+                Stepper("Teinte chaud / froid", signed(r.monoWarm), r.monoWarm > -9, r.monoWarm < 9,
+                    onMinus = { onChange(r.copy(monoWarm = r.monoWarm - 1)) },
+                    onPlus = { onChange(r.copy(monoWarm = r.monoWarm + 1)) },
+                )
+                Stepper("Teinte magenta / vert", signed(r.monoMagenta), r.monoMagenta > -9, r.monoMagenta < 9,
+                    onMinus = { onChange(r.copy(monoMagenta = r.monoMagenta - 1)) },
+                    onPlus = { onChange(r.copy(monoMagenta = r.monoMagenta + 1)) },
+                )
+            }
+
             Section("GRAIN · COULEUR")
             SegRow("Effet grain", Level.entries, r.grain, { it.label }) { onChange(r.copy(grain = it)) }
             SegRow("Taille du grain", listOf(false, true), r.grainLarge, { if (it) "Gros" else "Petit" }) {

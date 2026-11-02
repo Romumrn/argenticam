@@ -27,12 +27,30 @@ data class FilmPreset(
     val vignette: Float = 0f,
     /** Halo rouge autour des hautes lumières (CineStill). 0..1 */
     val halation: Float = 0f,
+    /** LUT 3D (assets/luts/<lut>.png) : simulation mesurée, appliquée avant les réglages. */
+    val lut: String? = null,
+    /** Simulation Fujifilm (affichée à part dans la liste). */
+    val fuji: Boolean = false,
 )
 
 object Presets {
     private fun v(r: Float, g: Float, b: Float) = floatArrayOf(r, g, b)
 
-    fun byId(id: String): FilmPreset = all.firstOrNull { it.id == id } ?: all[1]
+    /** Anciens identifiants (versions précédentes de l'appli) -> nouveaux. */
+    private val aliases = mapOf(
+        "classicchrome" to "fuji_classicchrome",
+        "classicneg" to "fuji_classicneg",
+        "velvia50" to "fuji_velvia",
+        "acros" to "fuji_acros",
+    )
+
+    fun byId(id: String): FilmPreset {
+        val real = aliases[id] ?: id
+        return all.firstOrNull { it.id == real } ?: all[1]
+    }
+
+    private fun fuji(id: String, name: String, subtitle: String) =
+        FilmPreset(id = "fuji_$id", name = name, subtitle = subtitle, lut = "fuji_$id", fuji = true)
 
     val original = FilmPreset(
         id = "original", name = "Original", subtitle = "sans filtre",
@@ -40,6 +58,28 @@ object Presets {
 
     val all: List<FilmPreset> = listOf(
         original,
+        // --- Simulations Fujifilm (LUT mesurées, voir assets/luts/LICENSE.md) ---
+        fuji("provia", "Provia", "Fuji · standard"),
+        fuji("velvia", "Velvia", "Fuji · éclatant"),
+        fuji("astia", "Astia", "Fuji · doux"),
+        fuji("classicchrome", "Classic Chrome", "Fuji · doc, désaturé"),
+        fuji("realaace", "Reala Ace", "Fuji · naturel, fidèle"),
+        fuji("pronehi", "Pro Neg Hi", "Fuji · portrait contrasté"),
+        fuji("pronegstd", "Pro Neg Std", "Fuji · portrait doux"),
+        fuji("classicneg", "Classic Neg", "Fuji · contraste, vert-magenta"),
+        fuji("nostalgicneg", "Nostalgic Neg", "Fuji · ambré, années 70"),
+        fuji("eterna", "Eterna", "Fuji · cinéma, plat"),
+        fuji("bleachbypass", "Bleach Bypass", "Fuji · sans blanchiment"),
+        FilmPreset(
+            id = "fuji_acros", name = "Acros", subtitle = "Fuji · N&B fin et dense", fuji = true,
+            bw = true, contrast = 1.14f, exposure = -0.05f,
+            grain = 0.07f, grainSize = 1.0f,
+        ),
+        FilmPreset(
+            id = "fuji_monochrome", name = "Monochrome", subtitle = "Fuji · N&B neutre", fuji = true,
+            bw = true,
+        ),
+        // --- Pellicules ---
         FilmPreset(
             id = "portra400", name = "Portra 400", subtitle = "ISO 400 · portrait",
             contrast = 0.95f, saturation = 0.92f, fade = 0.025f, exposure = 0.1f,
@@ -63,34 +103,6 @@ object Presets {
             shadowTint = v(-0.01f, 0.018f, 0.012f),
             highlightTint = v(0.01f, 0.012f, 0.0f),
             grain = 0.16f, grainSize = 1.5f, vignette = 0.15f,
-        ),
-        FilmPreset(
-            id = "velvia50", name = "Velvia 50", subtitle = "ISO 50 · diapo",
-            contrast = 1.22f, saturation = 1.5f, exposure = -0.05f,
-            gain = v(1.0f, 1.02f, 1.0f),
-            shadowTint = v(0f, 0f, 0.01f),
-            grain = 0.04f, grainSize = 1.0f, vignette = 0.1f,
-        ),
-        FilmPreset(
-            id = "classicchrome", name = "Classic Chrome", subtitle = "doc · désaturé",
-            contrast = 1.15f, saturation = 0.78f, fade = 0.04f,
-            gain = v(1.0f, 0.99f, 0.98f),
-            shadowTint = v(-0.012f, 0.0f, 0.03f),
-            highlightTint = v(0.018f, 0.012f, 0.0f),
-            grain = 0.07f, grainSize = 1.1f, vignette = 0.12f,
-        ),
-        FilmPreset(
-            id = "classicneg", name = "Classic Neg", subtitle = "contraste · vert-magenta",
-            contrast = 1.25f, saturation = 1.05f, fade = 0.05f, exposure = -0.1f,
-            gain = v(1.02f, 0.97f, 1.0f),
-            shadowTint = v(-0.012f, 0.025f, 0.02f),
-            highlightTint = v(0.03f, 0.0f, 0.012f),
-            grain = 0.11f, grainSize = 1.3f, vignette = 0.2f,
-        ),
-        FilmPreset(
-            id = "acros", name = "Acros", subtitle = "N&B · fin",
-            bw = true, contrast = 1.18f, fade = 0.015f,
-            grain = 0.1f, grainSize = 1.1f, vignette = 0.15f,
         ),
         FilmPreset(
             id = "trix400", name = "Tri-X 400", subtitle = "N&B · grain dur",

@@ -7,8 +7,10 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 ## Fonctionnalités
 
 **Recettes façon Fujifilm**
-- 12 pellicules de base : Portra 400, Gold 200, Superia 400, Velvia 50, Classic Chrome, Classic Neg, Acros, Tri-X 400, CineStill 800T, Ektachrome, Lomo, Original
-- Quelques recettes prêtes à l'emploi : Kodachrome 64, Portra (recette), Nostalgie 70s, Nuit tungstène
+- **Simulations Fujifilm mesurées** (LUT 3D construites à partir des profils Camera Matching Fuji) : Provia, Velvia, Astia, Classic Chrome, Reala Ace, Pro Neg Hi, Pro Neg Std, Classic Neg, Nostalgic Neg, Eterna, Bleach Bypass
+- **Acros** et **Monochrome**, avec les filtres N&B Jaune / Rouge / Vert et la teinte monochrome chaud/froid et magenta/vert
+- Pellicules argentiques (approximations faites main) : Portra 400, Gold 200, Superia 400, Tri-X 400, CineStill 800T, Ektachrome, Lomo, et Original
+- Quelques recettes prêtes à l'emploi : Kodachrome 64, Portra (recette), Nostalgie 70s, Acros +R, Nuit tungstène
 - **Crée et sauvegarde tes propres recettes**, avec l'aperçu en direct pendant l'édition. Tous les réglages d'un boîtier Fuji :
   - Effet grain (Off / Faible / Fort, petit ou gros), Color Chrome, Color Chrome FX Bleu
   - Balance des blancs (Auto, Soleil, Nuageux, Tungstène, Fluo ou **Kelvin** de 2500 à 10000 K) et **décalage R/B** de -9 à +9
@@ -29,7 +31,11 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 
 Beaucoup de constructeurs (Xiaomi, et d'autres) ne laissent pas les applis tierces régler la vitesse, l'ISO ou la mise au point à la main. L'appli détecte ces limites et l'affiche. Dans ce cas, utilise l'EV et la mise au point au toucher (AF-S).
 
-Les noms de pellicules sont cités à titre descriptif : les looks sont des approximations faites à la main, pas des reproductions officielles.
+## Crédits
+
+Les simulations Fujifilm utilisent des LUT dérivées de [abpy/FujifilmCameraProfiles](https://github.com/abpy/FujifilmCameraProfiles), sous licence **CC BY-NC-SA 4.0** (pas d'usage commercial). Elles sont adaptées aux images de téléphone par `tools/bake_luts.py`. Voir `app/src/main/assets/luts/LICENSE.md`.
+
+Les noms de pellicules et de simulations sont des marques de leurs propriétaires, cités pour identifier les rendus. Ce ne sont pas des reproductions officielles.
 
 ## Télécharger l'APK
 
@@ -70,6 +76,8 @@ CameraX ImageCapture ──► JPEG ──► Bitmap ──► shader "film" (EG
 | `RetroDial.kt` | La molette rétro |
 | `Recipe.kt` | Modèle des recettes, recettes intégrées, sauvegarde, conversion en paramètres de rendu |
 | `RecipeEditor.kt` | L'éditeur de recettes |
+| `LutCache.kt`, `assets/luts/` | LUT 3D des simulations Fujifilm |
+| `tools/bake_luts.py` | Génère les LUT de l'appli à partir des `.cube` d'origine |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée et lecture des photos dans MediaStore |
 
 Le shader enchaîne : halation, balance des blancs et exposition, noir et blanc et saturation, contraste avec pied et épaule, teintes dans les ombres et les hautes lumières, noirs relevés, grain (plus visible dans les tons moyens, qui « vit » environ 12 fois par seconde), vignettage, puis mélange avec l'original selon l'intensité.

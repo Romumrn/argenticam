@@ -7,6 +7,14 @@ import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
+/** Filtres de couleur pour le noir et blanc (Acros +Ye / +R / +G). Poids R, G, B. */
+enum class BwFilter(val label: String, val mix: FloatArray) {
+    NONE("Aucun", floatArrayOf(0.2126f, 0.7152f, 0.0722f)),
+    YELLOW("Jaune", floatArrayOf(0.42f, 0.53f, 0.05f)),
+    RED("Rouge", floatArrayOf(0.72f, 0.28f, 0.0f)),
+    GREEN("Vert", floatArrayOf(0.20f, 0.72f, 0.08f)),
+}
+
 enum class Level(val label: String, val amount: Float) {
     OFF("Off", 0f), WEAK("Faible", 0.5f), STRONG("Fort", 1f)
 }
@@ -39,6 +47,10 @@ data class Recipe(
     val grainLarge: Boolean = false,
     val colorChrome: Level = Level.OFF,
     val chromeBlue: Level = Level.OFF,
+    // Noir et blanc (si la pellicule de base est N&B)
+    val bwFilter: BwFilter = BwFilter.NONE,
+    val monoWarm: Int = 0,           // -9 (froid) .. +9 (chaud)
+    val monoMagenta: Int = 0,        // -9 (vert) .. +9 (magenta)
     val vignette: Int = 0,           // 0..5
     val halation: Int = 0,           // 0..5
     val strength: Int = 10,          // 0..10 (×10 %)
@@ -66,6 +78,10 @@ class RenderParams(
     val dynamicRange: Float,
     val highlight: Float,
     val shadow: Float,
+    /** LUT 3D de la simulation (null = aucune). */
+    val lut: String?,
+    val bwMix: FloatArray,
+    val monoTint: FloatArray,
 )
 
 fun Recipe.base(): FilmPreset = Presets.byId(baseId)
@@ -102,6 +118,13 @@ fun Recipe.render(): RenderParams {
         },
         highlight = highlight,
         shadow = shadow,
+        lut = p.lut,
+        bwMix = bwFilter.mix,
+        monoTint = floatArrayOf(
+            0.005f * monoWarm + 0.004f * monoMagenta,
+            -0.004f * monoMagenta,
+            -0.005f * monoWarm + 0.004f * monoMagenta,
+        ),
     )
 }
 
@@ -162,21 +185,26 @@ object Recipes {
     /** Pellicules de base + quelques recettes inspirées de recettes Fuji populaires. */
     val builtIns: List<Recipe> = Presets.all.map { fromPreset(it) } + listOf(
         Recipe(
-            id = "r_kodachrome", name = "Kodachrome 64", baseId = "classicchrome", builtIn = true,
+            id = "r_kodachrome", name = "Kodachrome 64", baseId = "fuji_classicchrome", builtIn = true,
             wb = WhiteBalance.DAYLIGHT, wbShiftR = 2, wbShiftB = -5,
             dynamicRange = 200, shadow = 0.5f, color = 2, sharpness = 1,
             grain = Level.WEAK, colorChrome = Level.STRONG,
         ),
         Recipe(
-            id = "r_portra", name = "Portra (recette)", baseId = "classicchrome", builtIn = true,
+            id = "r_portra", name = "Portra (recette)", baseId = "fuji_classicchrome", builtIn = true,
             wb = WhiteBalance.KELVIN, kelvin = 5200, wbShiftR = 1, wbShiftB = -6,
             dynamicRange = 400, highlight = -1f, shadow = -1f, color = 2, sharpness = -2,
             grain = Level.STRONG, colorChrome = Level.STRONG, chromeBlue = Level.WEAK,
         ),
         Recipe(
-            id = "r_70s", name = "Nostalgie 70s", baseId = "classicneg", builtIn = true,
+            id = "r_70s", name = "Nostalgie 70s", baseId = "fuji_classicneg", builtIn = true,
             wbShiftR = 2, wbShiftB = -4, dynamicRange = 400, highlight = -1f, shadow = 1f,
             color = -1, sharpness = -2, clarity = -2, grain = Level.STRONG, grainLarge = true, vignette = 2,
+        ),
+        Recipe(
+            id = "r_acros_r", name = "Acros +R", baseId = "fuji_acros", builtIn = true,
+            bwFilter = BwFilter.RED, dynamicRange = 200, highlight = 0.5f, shadow = 1f, sharpness = 1,
+            grain = Level.WEAK,
         ),
         Recipe(
             id = "r_tungsten", name = "Nuit tungstène", baseId = "cinestill800t", builtIn = true,
@@ -232,6 +260,9 @@ object RecipeStore {
         put("grainLarge", r.grainLarge)
         put("colorChrome", r.colorChrome.name)
         put("chromeBlue", r.chromeBlue.name)
+        put("bwFilter", r.bwFilter.name)
+        put("monoWarm", r.monoWarm)
+        put("monoMagenta", r.monoMagenta)
         put("vignette", r.vignette)
         put("halation", r.halation)
         put("strength", r.strength)
@@ -259,6 +290,9 @@ object RecipeStore {
         grainLarge = o.optBoolean("grainLarge", false),
         colorChrome = level(o.optString("colorChrome")),
         chromeBlue = level(o.optString("chromeBlue")),
+        bwFilter = BwFilter.entries.firstOrNull { it.name == o.optString("bwFilter") } ?: BwFilter.NONE,
+        monoWarm = o.optInt("monoWarm", 0),
+        monoMagenta = o.optInt("monoMagenta", 0),
         vignette = o.optInt("vignette", 0),
         halation = o.optInt("halation", 0),
         strength = o.optInt("strength", 10),
