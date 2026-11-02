@@ -53,6 +53,7 @@ class FilmProgram(private val external: Boolean) {
         look: Look,
         aspect: Float,
         seed: Float,
+        peaking: Boolean = false,
     ) {
         val p = look.preset
         val target = if (external) GLES11Ext.GL_TEXTURE_EXTERNAL_OES else GLES20.GL_TEXTURE_2D
@@ -84,6 +85,7 @@ class FilmProgram(private val external: Boolean) {
         GLES20.glUniform1f(loc("uGrainCells"), 1100f / p.grainSize)
         GLES20.glUniform1f(loc("uVignette"), p.vignette)
         GLES20.glUniform1f(loc("uHalation"), p.halation)
+        GLES20.glUniform1f(loc("uPeaking"), if (peaking) 1f else 0f)
 
         val aPos = GLES20.glGetAttribLocation(program, "aPos")
         GLES20.glEnableVertexAttribArray(aPos)
@@ -148,6 +150,7 @@ uniform float uGrain;
 uniform float uGrainCells;
 uniform float uVignette;
 uniform float uHalation;
+uniform float uPeaking;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
@@ -215,6 +218,18 @@ void main() {
     }
 
     c = mix(src, clamp(c, 0.0, 1.0), uStrength);
+
+    // Focus peaking : les contours nets s'allument en rouge (aide à la mise au point manuelle)
+    if (uPeaking > 0.5) {
+        vec2 px = vec2(0.0018 / uAspect, 0.0018);
+        float gx = luma(texture2D(uTex, vTex + uLin * vec2(px.x, 0.0)).rgb)
+                 - luma(texture2D(uTex, vTex - uLin * vec2(px.x, 0.0)).rgb);
+        float gy = luma(texture2D(uTex, vTex + uLin * vec2(0.0, px.y)).rgb)
+                 - luma(texture2D(uTex, vTex - uLin * vec2(0.0, px.y)).rgb);
+        float edge = smoothstep(0.07, 0.16, length(vec2(gx, gy)));
+        c = mix(c, vec3(1.0, 0.18, 0.12), edge * 0.9);
+    }
+
     gl_FragColor = vec4(c, 1.0);
 }
 """

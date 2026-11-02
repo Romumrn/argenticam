@@ -55,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -82,7 +83,7 @@ private val Ink = Color(0xFF0B0B0B)
 private val Card = Color(0xFF161616)
 
 private enum class Tab(val label: String) {
-    Look("LOOK"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
+    Look("LOOK"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
 }
 
 /** Couleur d'accent de chaque pellicule (petite pastille dans le carrousel). */
@@ -123,6 +124,11 @@ fun CameraScreen(
     var tab by remember { mutableStateOf(Tab.Look) }
     var settings by remember { mutableStateOf(ManualSettings()) }
     var camera by remember { mutableStateOf<Camera?>(null) }
+    var lenses by remember { mutableStateOf<List<Lens>>(emptyList()) }
+    var lensSel by remember { mutableStateOf<Lens?>(null) }
+    var boundLensId by remember { mutableStateOf<String?>(null) }
+    var zoom by remember { mutableStateOf(1f) }
+    var peaking by remember { mutableStateOf(false) }
     val caps = remember(camera) { camera?.let { CameraCaps(it) } }
 
     val flash = remember { Animatable(0f) }
@@ -147,7 +153,7 @@ fun CameraScreen(
     }
 
     // La caméra ne tourne que quand l'écran caméra est visible.
-    DisposableEffect(lifecycleOwner, active) {
+    DisposableEffect(lifecycleOwner, active, boundLensId) {
         var disposed = false
         val providerFuture = ProcessCameraProvider.getInstance(context)
         if (active) {
@@ -167,9 +173,23 @@ fun CameraScreen(
                         .build()
                     preview.setSurfaceProvider(previewView.surfaceProvider)
                     provider.unbindAll()
-                    camera = provider.bindToLifecycle(
-                        lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture,
-                    )
+                    val bound = try {
+                        provider.bindToLifecycle(lifecycleOwner, selectorFor(boundLensId), preview, imageCapture)
+                    } catch (e: Exception) {
+                        // objectif refusé par le téléphone : retour à la caméra par défaut
+                        Toast.makeText(context, "Cet objectif n'est pas accessible", Toast.LENGTH_SHORT).show()
+                        boundLensId = null
+                        provider.unbindAll()
+                        provider.bindToLifecycle(
+                            lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageCapture,
+                        )
+                    }
+                    camera = bound
+                    if (lenses.isEmpty()) {
+                        val found = discoverLenses(provider, bound)
+                        lenses = found
+                        if (lensSel == null) lensSel = defaultLens(found)
+                    }
                 },
                 mainExecutor,
             )
@@ -191,6 +211,14 @@ fun CameraScreen(
             } catch (_: Exception) {
                 // appareil qui refuse une clé : on garde l'aperçu en auto
             }
+        }
+    }
+
+    // Zoom = passage d'un objectif à l'autre sur les téléphones à caméra logique.
+    LaunchedEffect(camera, zoom) {
+        try {
+            camera?.cameraControl?.setZoomRatio(zoom)
+        } catch (_: Exception) {
         }
     }
 
@@ -258,7 +286,7 @@ fun CameraScreen(
                 AndroidView(
                     factory = { previewView },
                     modifier = Modifier.fillMaxSize(),
-                    update = { it.setLook(look) },
+                    update = { it.setLook(look, peaking && settings.manualFocus) },
                 )
                 ViewfinderFrame()
 
@@ -335,6 +363,7 @@ fun CameraScreen(
         // Bande de réglages
         val strip = listOf(
             Tab.Look to preset.name,
+            Tab.Lens to (lensSel?.label ?: "1×"),
             Tab.Speed to if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO",
             Tab.Iso to if (settings.manual) settings.iso.toString() else "AUTO",
             Tab.Ev to if (settings.manual) "—" else evLabel(settings.evIndex, evStep),
@@ -372,8 +401,9 @@ fun CameraScreen(
             }
         }
 
-        // Sélecteur de la valeur choisie
-        Box(Modifier.fillMaxWidth().height(54.dp).padding(top = 6.dp), contentAlignment = Alignment.CenterStart) {
+        // Sélecteur de la valeur choisie (hauteur fixe pour ne pas redimensionner le viseur)
+        Box(Modifier.fillMaxWidth().height(84.dp).padding(top = 4.dp), contentAlignment = Alignment.CenterStart) {
+            val k = caps
             when (tab) {
                 Tab.Look -> LazyRow(
                     contentPadding = PaddingValues(horizontal = 12.dp),
@@ -391,7 +421,7 @@ fun CameraScreen(
                                     RoundedCornerShape(14.dp),
                                 )
                                 .clickable { preset = p }
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Box(Modifier.size(9.dp).clip(CircleShape).background(accent))
@@ -407,27 +437,60 @@ fun CameraScreen(
                     }
                 }
 
-                Tab.Speed -> ValueRow(
-                    values = caps?.shutterStops ?: emptyList(),
-                    selected = settings.shutterNs.takeIf { settings.manual },
-                    label = { shutterLabel(it) },
-                    onPick = { settings = settings.copy(manual = true, shutterNs = it) },
+                Tab.Lens -> ValueRow(
+                    values = lenses,
+                    selected = lensSel,
+                    label = { it.display },
+                    onPick = { l ->
+                        lensSel = l
+                        if (l.cameraId != null) {
+                            zoom = 1f
+                            boundLensId = l.cameraId
+                        } else {
+                            boundLensId = null
+                            zoom = l.zoom
+                        }
+                    },
                 )
 
-                Tab.Iso -> ValueRow(
-                    values = caps?.isoStops ?: emptyList(),
-                    selected = settings.iso.takeIf { settings.manual },
-                    label = { it.toString() },
-                    onPick = { settings = settings.copy(manual = true, iso = it) },
-                )
+                Tab.Speed -> {
+                    val stops = k?.shutterStops ?: emptyList()
+                    if (stops.isEmpty()) Unavailable() else RetroDial(
+                        count = stops.size,
+                        index = stops.indexOf(k!!.nearestShutter(settings.shutterNs)).coerceAtLeast(0),
+                        onIndexChange = { settings = settings.copy(manual = true, shutterNs = stops[it]) },
+                        labelAt = { shutterLabel(stops[it]) },
+                        modifier = Modifier.fillMaxSize(),
+                        spacing = 58.dp,
+                    )
+                }
 
-                Tab.Ev -> ValueRow(
-                    values = caps?.evIndexes ?: emptyList(),
-                    selected = settings.evIndex.takeIf { !settings.manual },
-                    label = { evLabel(it, evStep) },
-                    // La correction d'expo n'a de sens qu'en auto : on y repasse.
-                    onPick = { settings = settings.copy(manual = false, evIndex = it) },
-                )
+                Tab.Iso -> {
+                    val stops = k?.isoStops ?: emptyList()
+                    if (stops.isEmpty()) Unavailable() else RetroDial(
+                        count = stops.size,
+                        index = stops.indexOf(k!!.nearestIso(settings.iso)).coerceAtLeast(0),
+                        onIndexChange = { settings = settings.copy(manual = true, iso = stops[it]) },
+                        labelAt = { stops[it].toString() },
+                        modifier = Modifier.fillMaxSize(),
+                        spacing = 66.dp,
+                    )
+                }
+
+                Tab.Ev -> {
+                    val stops = k?.evIndexes ?: emptyList()
+                    if (stops.isEmpty()) Unavailable() else RetroDial(
+                        count = stops.size,
+                        index = stops.indexOf(settings.evIndex).coerceAtLeast(0),
+                        onIndexChange = { settings = settings.copy(manual = false, evIndex = stops[it]) },
+                        labelAt = { evLabel(stops[it], evStep) },
+                        modifier = Modifier.fillMaxSize(),
+                        spacing = 50.dp,
+                        enabled = !settings.manual,
+                        // La correction d'expo n'a de sens qu'en auto : on y repasse.
+                        onTouched = { if (settings.manual) settings = settings.copy(manual = false) },
+                    )
+                }
 
                 Tab.Wb -> ValueRow(
                     values = WhiteBalance.entries,
@@ -436,29 +499,37 @@ fun CameraScreen(
                     onPick = { settings = settings.copy(wb = it) },
                 )
 
-                Tab.Focus -> Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Chip("AF", !settings.manualFocus) { settings = settings.copy(manualFocus = false) }
-                    if ((caps?.minFocusDistance ?: 0f) > 0f) {
-                        Chip("MF", settings.manualFocus) { settings = settings.copy(manualFocus = true) }
-                        if (settings.manualFocus) {
-                            Text("∞", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
-                            Slider(
-                                value = settings.focus,
-                                onValueChange = { settings = settings.copy(focus = it) },
-                                modifier = Modifier.weight(1f),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Amber, activeTrackColor = Amber,
-                                    inactiveTrackColor = Color.White.copy(alpha = 0.2f),
-                                ),
-                            )
-                            Text("proche", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
-                        }
+                Tab.Focus -> {
+                    val minD = k?.minFocusDistance ?: 0f
+                    if (minD <= 0f) {
+                        Unavailable("Mise au point manuelle indisponible sur cet objectif")
                     } else {
-                        Text("Mise au point manuelle indisponible", color = Color.White.copy(alpha = 0.45f), fontSize = 12.sp)
+                        val units = 60
+                        val marks = remember(minD) { focusMarks(minD, units) }
+                        RetroDial(
+                            count = units + 1,
+                            index = (settings.focus * units).roundToInt().coerceIn(0, units),
+                            onIndexChange = { settings = settings.copy(manualFocus = true, focus = it / units.toFloat()) },
+                            labelAt = { marks[it] },
+                            modifier = Modifier.fillMaxSize(),
+                            spacing = 14.dp,
+                            enabled = settings.manualFocus,
+                            onTouched = { if (!settings.manualFocus) settings = settings.copy(manualFocus = true) },
+                        )
+                        Row(
+                            Modifier.align(Alignment.TopStart).padding(start = 10.dp, top = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Pill("AF", !settings.manualFocus) { settings = settings.copy(manualFocus = false) }
+                            Pill("MF", settings.manualFocus) { settings = settings.copy(manualFocus = true) }
+                        }
+                        Pill(
+                            "PEAK", peaking && settings.manualFocus,
+                            Modifier.align(Alignment.TopEnd).padding(end = 10.dp, top = 2.dp),
+                        ) {
+                            peaking = !peaking
+                            if (peaking) settings = settings.copy(manualFocus = true)
+                        }
                     }
                 }
             }
@@ -551,6 +622,40 @@ private fun <T> ValueRow(values: List<T>, selected: T?, label: (T) -> String, on
     ) {
         items(values) { v -> Chip(label(v), v == selected) { onPick(v) } }
     }
+}
+
+@Composable
+private fun Unavailable(text: String = "Non disponible sur cet appareil") {
+    Text(text, color = Color.White.copy(alpha = 0.45f), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp))
+}
+
+/** Petite pastille cliquable (AF / MF / PEAK). */
+@Composable
+private fun Pill(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Text(
+        text,
+        color = if (selected) Amber else Color.White.copy(alpha = 0.8f),
+        fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold,
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) Amber.copy(alpha = 0.18f) else Color.Black.copy(alpha = 0.55f))
+            .border(
+                BorderStroke(1.dp, if (selected) Amber else Color.White.copy(alpha = 0.18f)),
+                RoundedCornerShape(8.dp),
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 9.dp, vertical = 3.dp),
+    )
+}
+
+/** Repères de distance sur la bague de mise au point (en dioptries : 0 = infini). */
+private fun focusMarks(minDiopters: Float, units: Int): Map<Int, String> {
+    val marks = linkedMapOf<Int, String>()
+    val candidates = listOf(0f to "∞", 0.2f to "5m", 0.5f to "2m", 1f to "1m", 2f to "50cm", 3.33f to "30cm", 5f to "20cm", 10f to "10cm")
+    for ((d, text) in candidates) {
+        if (d <= minDiopters + 0.01f) marks[(d / minDiopters * units).roundToInt().coerceIn(0, units)] = text
+    }
+    return marks
 }
 
 @Composable

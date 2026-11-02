@@ -10,6 +10,9 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - 12 looks inspirés de pellicules : Portra 400, Gold 200, Superia 400, Velvia 50, Classic Chrome, Classic Neg, Acros, Tri-X 400, CineStill 800T, Ektachrome, Lomo, et Original (sans filtre)
 - Réglage de l'**intensité** de l'effet et de la quantité de **grain**
 - **Réglages manuels façon Fujifilm** : vitesse d'obturation, ISO, correction d'exposition (EV), balance des blancs, mise au point manuelle, et un dial **A / M** (auto / manuel). Seules les valeurs que le capteur du téléphone accepte sont proposées.
+- **Molette rétro** moletée pour la vitesse, l'ISO et l'EV : on la tourne au doigt, elle clique de cran en cran (vibration) et se cale sur la valeur
+- **Mise au point manuelle** avec une bague graduée en distance (∞ → 10 cm) et **focus peaking** (contours nets en rouge)
+- **Choix de l'objectif** : ultra grand-angle, principal, télé, selon ce que le téléphone expose
 - Compteur de poses façon rouleau de **36 vues**
 - **Galerie intégrée** : miniature de la dernière photo, grille, visionneuse avec swipe, partage et suppression
 - Photos ~12 Mpx traitées en pleine résolution avec le même shader que l'aperçu
@@ -52,7 +55,8 @@ CameraX ImageCapture ──► JPEG ──► Bitmap ──► shader "film" (EG
 | `FilmProcessor.kt` | Applique le shader à une photo en pleine résolution, hors écran |
 | `PhotoPipeline.kt` | Décode, tourne, développe et enregistre la photo |
 | `CameraScreen.kt` | Écran caméra (Jetpack Compose) : viseur, bande de réglages, déclencheur |
-| `Manual.kt` | Réglages manuels via Camera2 (ISO, vitesse, EV, balance des blancs, focus) |
+| `Manual.kt` | Réglages manuels via Camera2 (ISO, vitesse, EV, balance des blancs, focus) et détection des objectifs |
+| `RetroDial.kt` | La molette rétro |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée et lecture des photos dans MediaStore |
 
 Le shader enchaîne : halation, balance des blancs et exposition, noir et blanc et saturation, contraste avec pied et épaule, teintes dans les ombres et les hautes lumières, noirs relevés, grain (plus visible dans les tons moyens, qui « vit » environ 12 fois par seconde), vignettage, puis mélange avec l'original selon l'intensité.
@@ -63,7 +67,7 @@ Ajoute une entrée dans la liste de `Presets.all` (`FilmPreset.kt`). Tous les pa
 
 ## Pistes pour la suite
 
-- Caméra frontale, zoom, mise au point au toucher, flash, histogramme
+- Caméra frontale, zoom, mise au point au toucher, flash, pincement pour zoomer, histogramme
 - Import et traitement de photos existantes
 - Date imprimée façon argentique, cadres, bords de pellicule
 - Courbes plus fidèles, ou LUTs 3D
