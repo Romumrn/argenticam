@@ -11,7 +11,7 @@ shader**. Réglages de prise de vue façon boîtier : molettes rétro, A/M, AF-S
 - Langue : **français** pour l'interface, les commentaires et les messages à l'utilisateur.
 - Kotlin, Jetpack Compose (Material 3), CameraX 1.3 + interop Camera2, OpenGL ES 2.0.
 - `minSdk 29`, `targetSdk/compileSdk 34`, JDK 17, AGP 8.5, Kotlin 2.0, Gradle 8.9 (wrapper).
-- Package : `com.filmcam` (le code), `applicationId` : `com.argenticam`.
+- Package : `com.argenticam` (le code), `applicationId` : `com.argenticam`.
 
 ## Compiler et vérifier
 
@@ -33,7 +33,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
   dans le dépôt. Ne pas changer de clé : une autre clé empêche la mise à jour de l'appli installée.
 - La release `latest` est supprimée puis recréée à chaque build de `main` (un seul fichier : `ArgentiCam.apk`).
 
-## Architecture (`app/src/main/java/com/filmcam/`)
+## Architecture (`app/src/main/java/com/argenticam/`)
 
 | Fichier | Rôle |
 |---|---|

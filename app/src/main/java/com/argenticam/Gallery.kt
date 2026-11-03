@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import android.content.Intent
 import androidx.compose.foundation.Image

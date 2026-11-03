@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import android.graphics.Paint
 import android.graphics.Typeface

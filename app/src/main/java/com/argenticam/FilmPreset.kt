@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 /**
  * Un "look" argentique, décrit par quelques paramètres que le shader applique.

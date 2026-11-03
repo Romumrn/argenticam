@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import android.opengl.GLES11Ext
 import android.opengl.GLES20

@@ -15,7 +15,7 @@ val gitCommitCount: Int = try {
 val buildNumber: Int = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: gitCommitCount
 
 android {
-    namespace = "com.filmcam"
+    namespace = "com.argenticam"
     compileSdk = 34
 
     defaultConfig {

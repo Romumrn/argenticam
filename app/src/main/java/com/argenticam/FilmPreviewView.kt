@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import android.content.Context
 import android.graphics.SurfaceTexture

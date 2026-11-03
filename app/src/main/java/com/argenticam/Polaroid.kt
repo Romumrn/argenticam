@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import android.graphics.Bitmap
 import android.graphics.Canvas

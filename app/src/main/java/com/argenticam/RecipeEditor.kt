@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background

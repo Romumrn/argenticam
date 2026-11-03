@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween

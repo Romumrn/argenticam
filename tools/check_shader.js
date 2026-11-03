@@ -8,7 +8,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const src = fs.readFileSync(
-  path.join(__dirname, '..', 'app/src/main/java/com/filmcam/FilmProgram.kt'), 'utf8');
+  path.join(__dirname, '..', 'app/src/main/java/com/argenticam/FilmProgram.kt'), 'utf8');
 const pick = (name) => {
   const m = src.match(new RegExp(name + ' = """([\\s\\S]*?)"""'));
   if (!m) throw new Error(name + ' introuvable dans FilmProgram.kt');

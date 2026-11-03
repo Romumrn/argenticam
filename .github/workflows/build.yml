@@ -48,7 +48,7 @@ jobs:
           path: ArgentiCam.apk
 
       # Sur la branche principale : on recrée la release "latest" à chaque build
-      # (supprime les anciens fichiers, comme le vieux FilmCam.apk) et on y met le nouvel APK.
+      # (supprime les fichiers des builds précédents) et on y met le nouvel APK.
       - name: Remove previous release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         env:

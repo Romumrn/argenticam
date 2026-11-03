@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import android.content.res.AssetManager
 import android.graphics.Bitmap

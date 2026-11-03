@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import android.content.ContentValues
 import android.content.Context

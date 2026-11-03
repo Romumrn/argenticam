@@ -1,4 +1,4 @@
-package com.filmcam
+package com.argenticam
 
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
