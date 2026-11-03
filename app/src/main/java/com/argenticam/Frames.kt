@@ -3,6 +3,8 @@ package com.argenticam
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas as ComposeCanvas
@@ -12,19 +14,64 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import kotlin.math.roundToInt
 
+/** Catégories de formats, pour s'y retrouver dans le sélecteur. */
+enum class FormatCategory(val label: String) {
+    STANDARD("STANDARD"),
+    INSTANT("INSTANTANÉS"),
+    FILM("PELLICULE"),
+    FUN("FUN"),
+}
+
 /** Formats de prise de vue. */
-enum class PhotoFormat(val label: String, val short: String) {
-    STANDARD("Standard 3:4", "3:4"),
-    POLAROID("Polaroid ▢", "POLAROID"),
-    FILM35("Pellicule 35 mm", "35 MM"),
-    DISPOSABLE("Jetable", "JETABLE"),
+enum class PhotoFormat(
+    val label: String,
+    val short: String,
+    val category: FormatCategory,
+    /** Nombre de déclenchements pour une photo (demi-format : 2, photomaton : 4). */
+    val shots: Int = 1,
+) {
+    STANDARD("Standard 3:4", "3:4", FormatCategory.STANDARD),
+    POLAROID("Polaroid 600", "POLAROID", FormatCategory.INSTANT),
+    POLAROID_GO("Polaroid Go", "POLA GO", FormatCategory.INSTANT),
+    SPECTRA("Polaroid Spectra", "SPECTRA", FormatCategory.INSTANT),
+    INSTAX_MINI("Instax Mini", "INSTAX", FormatCategory.INSTANT),
+    FILM35("35 mm", "35 MM", FormatCategory.FILM),
+    HALF_FRAME("Demi-format", "½ FORMAT", FormatCategory.FILM, shots = 2),
+    MEDIUM_6X6("Moyen format 6×6", "6×6", FormatCategory.FILM),
+    DISPOSABLE("Jetable", "JETABLE", FormatCategory.FUN),
+    PHOTOBOOTH("Photomaton", "PHOTOMATON", FormatCategory.FUN, shots = 4),
     ;
 
-    /** Cadre dessiné autour de la photo (null = photo pleine, sans cadre). */
+    /** Cadre dessiné autour d'une photo unique (null = photo pleine ou bande multi-photos). */
     val frame: PrintFrame?
         get() = when (this) {
             POLAROID -> PolaroidFrame
+            POLAROID_GO -> PolaroidGoFrame
+            SPECTRA -> SpectraFrame
+            INSTAX_MINI -> InstaxMiniFrame
             FILM35 -> Film35Frame
+            MEDIUM_6X6 -> Medium6x6Frame
+            else -> null
+        }
+
+    /** Tirage instantané : il "sort de l'appareil" et se développe à l'écran. */
+    val instantPrint: Boolean get() = frame is PaperFrame
+
+    /** Pellicules proposées dans ce format. */
+    fun allows(p: FilmPreset): Boolean = when (this) {
+        POLAROID, POLAROID_GO, SPECTRA, INSTAX_MINI -> p.instant
+        DISPOSABLE -> p.disposable
+        PHOTOBOOTH -> p.booth
+        else -> true
+    }
+
+    /** Pellicule chargée en entrant dans ce format (si la recette actuelle ne convient pas). */
+    val defaultBase: String?
+        get() = when (this) {
+            POLAROID, POLAROID_GO, SPECTRA -> "polaroid600"
+            INSTAX_MINI -> "instax"
+            DISPOSABLE -> "disposable400"
+            PHOTOBOOTH -> "boothbw"
             else -> null
         }
 }
@@ -97,8 +144,8 @@ abstract class PrintFrame(
     }
 
     /**
-     * Dessine tout le cadre SAUF la fenêtre de l'image (qui reste intacte), pour un tirage dont
-     * le coin est en ([left], [top]) et où 1 mm = [k] pixels.
+     * Dessine le cadre autour de la fenêtre de l'image, pour un tirage dont le coin est en
+     * ([left], [top]) et où 1 mm = [k] pixels.
      */
     abstract fun drawBorder(canvas: Canvas, left: Float, top: Float, k: Float, edge: EdgeInfo)
 
@@ -106,32 +153,52 @@ abstract class PrintFrame(
      * Remplit le tirage autour de la fenêtre avec 4 rectangles pleins
      * (pas de forme trouée : certains téléphones les remplissent entièrement).
      */
-    protected fun fillAroundHole(canvas: Canvas, left: Float, top: Float, k: Float, paint: Paint) {
-        val pl = left
-        val pt = top
-        val pr = left + printW * k
-        val pb = top + printH * k
-        val hl = left + holeX * k
-        val ht = top + holeY * k
-        val hr = hl + holeW * k
-        val hb = ht + holeH * k
-        canvas.drawRect(pl, pt, pr, ht, paint)
-        canvas.drawRect(pl, hb, pr, pb, paint)
-        canvas.drawRect(pl, ht, hl, hb, paint)
-        canvas.drawRect(hr, ht, pr, hb, paint)
+    protected fun fillAroundHole(canvas: Canvas, left: Float, top: Float, k: Float, paint: Paint) =
+        fillAround(canvas, left, top, printW * k, printH * k, RectF(left + holeX * k, top + holeY * k, left + (holeX + holeW) * k, top + (holeY + holeH) * k), paint)
+}
+
+/** Remplit un rectangle [w]x[h] autour d'une fenêtre [hole], avec 4 rectangles pleins. */
+internal fun fillAround(canvas: Canvas, left: Float, top: Float, w: Float, h: Float, hole: RectF, paint: Paint) {
+    canvas.drawRect(left, top, left + w, hole.top, paint)
+    canvas.drawRect(left, hole.bottom, left + w, top + h, paint)
+    canvas.drawRect(left, hole.top, hole.left, hole.bottom, paint)
+    canvas.drawRect(hole.right, hole.top, left + w, hole.bottom, paint)
+}
+
+/** Marquages de bord de film (orangés), en texte vertical ou horizontal. */
+internal object EdgePrint {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xD9E8A33C.toInt()
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        letterSpacing = 0.12f
+    }
+
+    fun vertical(canvas: Canvas, x: Float, y: Float, text: String) {
+        canvas.save()
+        canvas.translate(x, y)
+        canvas.rotate(90f)
+        canvas.drawText(text, 0f, 0f, paint)
+        canvas.restore()
     }
 }
 
-/** Polaroid type 600 : 88 x 107 mm, image carrée de 79 mm. */
-object PolaroidFrame : PrintFrame(
-    Polaroid.PRINT_W, Polaroid.PRINT_H, Polaroid.SIDE, Polaroid.TOP, Polaroid.IMAGE, Polaroid.IMAGE,
-) {
-    private val paper = Paint().apply { color = 0xFFF3F0E8.toInt() }
+internal val FilmBase = Paint().apply { color = 0xFF15100C.toInt() }
+internal val Backlight = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFEDEAE3.toInt() }
+
+// ============================== Instantanés ==============================
+
+/** Tirage instantané : papier autour de l'image, bord du bas plus épais (où l'on écrit). */
+open class PaperFrame(
+    printW: Float, printH: Float, holeX: Float, holeY: Float, holeW: Float, holeH: Float,
+    paperColor: Int,
+) : PrintFrame(printW, printH, holeX, holeY, holeW, holeH) {
+    private val paper = Paint().apply { color = paperColor }
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
         color = 0x26000000
     }
 
+    @Synchronized
     override fun drawBorder(canvas: Canvas, left: Float, top: Float, k: Float, edge: EdgeInfo) {
         fillAroundHole(canvas, left, top, k, paper)
         // léger liseré sombre à la jonction image / papier, comme sur un vrai tirage
@@ -142,48 +209,158 @@ object PolaroidFrame : PrintFrame(
     }
 }
 
+/** Polaroid 600 / SX-70 / i-Type : 88 x 107 mm, image carrée de 79 mm. */
+object PolaroidFrame : PaperFrame(88f, 107f, 4.5f, 6f, 79f, 79f, 0xFFF3F0E8.toInt())
+
+/** Polaroid Go : 53,9 x 66,6 mm, image de 47 x 46 mm. */
+object PolaroidGoFrame : PaperFrame(53.9f, 66.6f, 3.45f, 5f, 47f, 46f, 0xFFF3F0E8.toInt())
+
+/** Polaroid Spectra / Image : 102 x 101 mm, image horizontale de 92 x 73 mm. */
+object SpectraFrame : PaperFrame(102f, 101f, 5f, 5f, 92f, 73f, 0xFFF3F0E8.toInt())
+
+/** Instax Mini : 54 x 86 mm (format carte de crédit), image de 46 x 62 mm, papier blanc. */
+object InstaxMiniFrame : PaperFrame(54f, 86f, 4f, 7f, 46f, 62f, 0xFFF8F8F5.toInt())
+
+// ============================== Pellicule ==============================
+
 /**
  * Bande de pellicule 35 mm scannée, à la verticale : vue de 24 x 36 mm, perforations
  * de part et d'autre (pas de 4,75 mm), nom du film et numéros de vue imprimés sur les bords.
  */
 object Film35Frame : PrintFrame(35f, 44f, 5.5f, 4f, 24f, 36f) {
-    private val film = Paint().apply { color = 0xFF15100C.toInt() }
-    private val perf = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFEDEAE3.toInt() }
-    private val print = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xD9E8A33C.toInt() // marquage orangé du bord de film
-        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-        letterSpacing = 0.12f
-    }
-
     @Synchronized
     override fun drawBorder(canvas: Canvas, left: Float, top: Float, k: Float, edge: EdgeInfo) {
-        fillAroundHole(canvas, left, top, k, film)
-
-        // Perforations (lumière du scanner à travers les trous)
+        fillAroundHole(canvas, left, top, k, FilmBase)
         val r = 0.45f * k
         var y = 0.6f
         while (y + 2.79f <= printH) {
             val yt = top + y * k
             val yb = yt + 2.79f * k
-            canvas.drawRoundRect(left + 1.55f * k, yt, left + 3.53f * k, yb, r, r, perf)
-            canvas.drawRoundRect(left + (printW - 3.53f) * k, yt, left + (printW - 1.55f) * k, yb, r, r, perf)
+            canvas.drawRoundRect(left + 1.55f * k, yt, left + 3.53f * k, yb, r, r, Backlight)
+            canvas.drawRoundRect(left + (printW - 3.53f) * k, yt, left + (printW - 1.55f) * k, yb, r, r, Backlight)
             y += 4.75f
         }
-
-        // Marquages le long des bords (texte vertical, de haut en bas)
-        print.textSize = 1.0f * k
+        EdgePrint.paint.textSize = 1.0f * k
         val n = edge.frameNumber
-        vertical(canvas, left + 0.45f * k, top + 1.5f * k, "${edge.filmName}  ◀  ARGENTICAM")
-        vertical(canvas, left + (printW - 1.3f) * k, top + 5f * k, "▶ $n")
-        vertical(canvas, left + (printW - 1.3f) * k, top + 26f * k, "${n}A")
+        EdgePrint.vertical(canvas, left + 0.45f * k, top + 1.5f * k, "${edge.filmName}  ◀  ARGENTICAM")
+        EdgePrint.vertical(canvas, left + (printW - 1.3f) * k, top + 5f * k, "▶ $n")
+        EdgePrint.vertical(canvas, left + (printW - 1.3f) * k, top + 26f * k, "${n}A")
+    }
+}
+
+/**
+ * Moyen format 6x6 (pellicule 120, 61,5 mm de large, sans perforations) : vue carrée de
+ * 56 mm aux coins arrondis par le cache de l'appareil, marquages sur les bords.
+ */
+object Medium6x6Frame : PrintFrame(61.5f, 66f, 2.75f, 5f, 56f, 56f) {
+    private val corner = Path()
+
+    @Synchronized
+    override fun drawBorder(canvas: Canvas, left: Float, top: Float, k: Float, edge: EdgeInfo) {
+        fillAroundHole(canvas, left, top, k, FilmBase)
+        // coins arrondis de la fenêtre (forme simple, pas de trou)
+        val r = 1.2f * k
+        val l = left + holeX * k
+        val t = top + holeY * k
+        val rr = l + holeW * k
+        val b = t + holeH * k
+        roundCorner(canvas, l, t, r, 1f, 1f)
+        roundCorner(canvas, rr, t, r, -1f, 1f)
+        roundCorner(canvas, l, b, r, 1f, -1f)
+        roundCorner(canvas, rr, b, r, -1f, -1f)
+        // marquages : 12 vues par rouleau de 120
+        val n = (edge.frameNumber - 1) % 12 + 1
+        EdgePrint.paint.textSize = 1.1f * k
+        EdgePrint.vertical(canvas, left + 0.8f * k, top + 3f * k, "${edge.filmName} 120")
+        EdgePrint.vertical(canvas, left + (printW - 1.9f) * k, top + 8f * k, "$n")
+        EdgePrint.vertical(canvas, left + (printW - 1.9f) * k, top + 50f * k, "◀ $n")
     }
 
-    private fun vertical(canvas: Canvas, x: Float, y: Float, text: String) {
-        canvas.save()
-        canvas.translate(x, y)
-        canvas.rotate(90f)
-        canvas.drawText(text, 0f, 0f, print)
-        canvas.restore()
+    /** Remplit le petit triangle courbe entre un coin de la fenêtre et un arc de rayon [r]. */
+    private fun roundCorner(canvas: Canvas, x: Float, y: Float, r: Float, dx: Float, dy: Float) {
+        corner.reset()
+        corner.moveTo(x, y)
+        corner.lineTo(x + dx * r, y)
+        corner.quadTo(x, y, x, y + dy * r)
+        corner.close()
+        canvas.drawPath(corner, FilmBase)
+    }
+}
+
+/**
+ * Demi-format (Olympus Pen, Kodak Ektar H35) : deux vues verticales de 18 x 24 mm côte à côte
+ * sur une seule vue de 35 mm, bande horizontale avec perforations en haut et en bas.
+ * Chaque moitié est une photo 3:4 entière : pas de recadrage.
+ */
+object HalfFrameStrip {
+    private const val W = 45f
+    private const val H = 35f
+    private const val HALF_W = 18f
+    private const val HALF_H = 24f
+    private const val X0 = 4f
+    private const val Y0 = 5.5f
+    private const val GAP = 1f
+
+    fun compose(first: Bitmap, second: Bitmap, edge: EdgeInfo): Bitmap {
+        val k = first.width / HALF_W
+        val out = Bitmap.createBitmap((W * k).roundToInt(), (H * k).roundToInt(), Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        c.drawRect(0f, 0f, W * k, H * k, FilmBase)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+        val y0 = Y0 * k
+        val y1 = (Y0 + HALF_H) * k
+        c.drawBitmap(first, null, RectF(X0 * k, y0, (X0 + HALF_W) * k, y1), paint)
+        c.drawBitmap(second, null, RectF((X0 + HALF_W + GAP) * k, y0, (X0 + 2 * HALF_W + GAP) * k, y1), paint)
+        // perforations en haut et en bas
+        val r = 0.45f * k
+        var x = 0.6f
+        while (x + 2.79f <= W) {
+            c.drawRoundRect(x * k, 1.55f * k, (x + 2.79f) * k, 3.53f * k, r, r, Backlight)
+            c.drawRoundRect(x * k, (H - 3.53f) * k, (x + 2.79f) * k, (H - 1.55f) * k, r, r, Backlight)
+            x += 4.75f
+        }
+        EdgePrint.paint.textSize = 1.0f * k
+        val n = edge.frameNumber
+        c.drawText("▶ $n", 5f * k, 1.2f * k, EdgePrint.paint)
+        c.drawText("${n}A", 25f * k, 1.2f * k, EdgePrint.paint)
+        c.drawText("${edge.filmName}  ◀  ARGENTICAM  ½", 4f * k, (H - 0.35f) * k, EdgePrint.paint)
+        return out
+    }
+}
+
+/**
+ * Bande de photomaton : 4 photos verticales de 35 x 45 mm sur papier blanc,
+ * comme dans les cabines photo.
+ */
+object PhotoboothStrip {
+    const val FRAME_W = 35f
+    const val FRAME_H = 45f
+    private const val MARGIN = 3f
+    private const val STRIP_W = FRAME_W + 2 * MARGIN
+    private val paper = Paint().apply { color = 0xFFF5F5F2.toInt() }
+
+    /** Recadre une photo 3:4 au format 35 x 45 (centré). */
+    fun crop(src: Bitmap): Bitmap {
+        val w = src.width
+        val h = minOf(src.height, (w * FRAME_H / FRAME_W).roundToInt())
+        return Bitmap.createBitmap(src, 0, (src.height - h) / 2, w, h)
+    }
+
+    fun compose(frames: List<Bitmap>): Bitmap {
+        val k = frames.first().width / FRAME_W
+        val stripH = MARGIN + frames.size * (FRAME_H + MARGIN)
+        val out = Bitmap.createBitmap((STRIP_W * k).roundToInt(), (stripH * k).roundToInt(), Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        c.drawRect(0f, 0f, STRIP_W * k, stripH * k, paper)
+        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+        frames.forEachIndexed { i, f ->
+            val t = (MARGIN + i * (FRAME_H + MARGIN)) * k
+            c.drawBitmap(f, null, Rect(
+                (MARGIN * k).roundToInt(), t.roundToInt(),
+                ((MARGIN + FRAME_W) * k).roundToInt(), (t + FRAME_H * k).roundToInt(),
+            ), paint)
+        }
+        return out
     }
 }
 
@@ -195,10 +372,7 @@ fun FrameViewfinderMask(frame: PrintFrame, edge: EdgeInfo, modifier: Modifier = 
         val ink = Paint().apply { color = 0xFF0B0B0B.toInt() }
         drawIntoCanvas { c ->
             val nc = c.nativeCanvas
-            nc.drawRect(0f, 0f, size.width, p.top, ink)
-            nc.drawRect(0f, p.bottom, size.width, size.height, ink)
-            nc.drawRect(0f, p.top, p.left, p.bottom, ink)
-            nc.drawRect(p.right, p.top, size.width, p.bottom, ink)
+            fillAround(nc, 0f, 0f, size.width, size.height, p, ink)
             frame.drawBorder(nc, p.left, p.top, p.width() / frame.printW, edge)
         }
     }

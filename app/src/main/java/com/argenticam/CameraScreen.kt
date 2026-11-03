@@ -76,6 +76,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -93,6 +94,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -188,7 +191,13 @@ fun CameraScreen(
     var format by remember { mutableStateOf(PhotoFormat.STANDARD) }
     val polaroid = format == PhotoFormat.POLAROID
     var flashOn by remember { mutableStateOf(false) }
-    var developing by remember { mutableStateOf<android.net.Uri?>(null) }
+    // tirage qui "sort de l'appareil" après la prise de vue (instantanés, photomaton)
+    var developing by remember { mutableStateOf<Pair<android.net.Uri, PrintFrame?>?>(null) }
+    // demi-format : première vue en attente de la seconde
+    var pendingHalf by remember { mutableStateOf<java.io.File?>(null) }
+    // photomaton : compte à rebours et numéro de pose en cours
+    var countdown by remember { mutableIntStateOf(0) }
+    var boothPose by remember { mutableIntStateOf(0) }
     var inscription by remember { mutableStateOf(InscriptionStore.load(context)) }
     var typingNote by remember { mutableStateOf(false) }
 
@@ -396,73 +405,123 @@ fun CameraScreen(
     }
 
     /** Pellicules proposées selon le format : instantanées en Polaroid, jetables en Jetable. */
-    fun allowedBase(p: FilmPreset): Boolean = when (format) {
-        PhotoFormat.POLAROID -> p.instant
-        PhotoFormat.DISPOSABLE -> p.disposable
-        else -> true
-    }
+    fun allowedBase(p: FilmPreset): Boolean = format.allows(p)
 
     fun setFormat(f: PhotoFormat) {
+        if (f != PhotoFormat.HALF_FRAME && pendingHalf != null) {
+            PhotoPipeline.discardHalf(context)
+            pendingHalf = null
+        }
         format = f
-        when (f) {
-            // en Polaroid, une pellicule instantanée (modifiable ensuite)
-            PhotoFormat.POLAROID -> if (!recipe.base().instant) {
-                Recipes.builtIns.firstOrNull { it.id == "base_polaroid600" }?.let { selectRecipe(it) }
-            }
-            // en jetable, une pellicule de jetable, et la date orange comme sur les vrais
-            PhotoFormat.DISPOSABLE -> {
-                if (!recipe.base().disposable) {
-                    Recipes.builtIns.firstOrNull { it.id == "base_disposable400" }?.let { selectRecipe(it) }
+        // pellicule adaptée au format (instantané, jetable, cabine), modifiable ensuite
+        if (!f.allows(recipe.base())) {
+            f.defaultBase?.let { id -> Recipes.builtIns.firstOrNull { it.id == "base_$id" }?.let { selectRecipe(it) } }
+        }
+        // en jetable, la date orange comme sur les vrais
+        if (f == PhotoFormat.DISPOSABLE && inscription.mode == InscriptionMode.NONE) {
+            setInscription(inscription.copy(mode = InscriptionMode.DATE))
+        }
+    }
+
+    /** Déclenche et récupère le JPEG (sans attendre le développement, pour enchaîner les poses). */
+    suspend fun capture(): Capture = kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+        imageCapture.takePicture(
+            workExecutor,
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    cont.resumeWith(Result.success(PhotoPipeline.readCapture(image)))
                 }
-                if (inscription.mode == InscriptionMode.NONE) setInscription(inscription.copy(mode = InscriptionMode.DATE))
-            }
-            else -> Unit
+
+                override fun onError(exception: ImageCaptureException) {
+                    cont.resumeWith(Result.failure(exception))
+                }
+            },
+        )
+    }
+
+    fun shutterFx() {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        scope.launch {
+            flash.snapTo(0.8f)
+            flash.animateTo(0f, tween(260))
         }
     }
 
     fun takePhoto() {
         if (busy) return
         busy = true
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        scope.launch {
-            flash.snapTo(0.8f)
-            flash.animateTo(0f, tween(260))
-        }
         val params = renderParams
         val name = recipe.name
         val fmt = format
         val note = inscription
         val edge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
-        // Jetable : le vrai flash du téléphone, si on l'a allumé
+        // Jetable et photomaton : le vrai flash du téléphone, si on l'a allumé
         imageCapture.flashMode =
-            if (fmt == PhotoFormat.DISPOSABLE && flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
-        imageCapture.takePicture(
-            workExecutor,
-            object : ImageCapture.OnImageCapturedCallback() {
-                override fun onCaptureSuccess(image: ImageProxy) {
-                    try {
-                        val uri = PhotoPipeline.develop(context, image, params, name, fmt, note, edge)
-                        mainExecutor.execute {
-                            currentOnSaved()
-                            if (fmt == PhotoFormat.POLAROID) developing = uri
+            if ((fmt == PhotoFormat.DISPOSABLE || fmt == PhotoFormat.PHOTOBOOTH) && flashOn) {
+                ImageCapture.FLASH_MODE_ON
+            } else {
+                ImageCapture.FLASH_MODE_OFF
+            }
+        scope.launch {
+            try {
+                when (fmt) {
+                    PhotoFormat.PHOTOBOOTH -> {
+                        // 4 poses avec compte à rebours, comme dans une cabine
+                        val captures = mutableListOf<Capture>()
+                        for (pose in 1..fmt.shots) {
+                            boothPose = pose
+                            for (n in (if (pose == 1) 3 else 2) downTo 1) {
+                                countdown = n
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                delay(800)
+                            }
+                            countdown = 0
+                            shutterFx()
+                            captures += capture()
                         }
-                    } catch (e: Exception) {
-                        mainExecutor.execute {
-                            Toast.makeText(context, "Erreur : ${e.message}", Toast.LENGTH_LONG).show()
+                        boothPose = 0
+                        val uri = withContext(Dispatchers.Default) {
+                            PhotoPipeline.developBooth(context, captures, params, name, note)
                         }
-                    } finally {
-                        busy = false
+                        currentOnSaved()
+                        developing = uri to null
                     }
-                }
 
-                override fun onError(exception: ImageCaptureException) {
-                    busy = false
-                    mainExecutor.execute {
-                        Toast.makeText(context, "Erreur caméra : ${exception.message}", Toast.LENGTH_LONG).show()
+                    PhotoFormat.HALF_FRAME -> {
+                        shutterFx()
+                        val shot = capture()
+                        val first = pendingHalf
+                        if (first == null) {
+                            pendingHalf = withContext(Dispatchers.Default) {
+                                PhotoPipeline.developHalfFirst(context, shot, params)
+                            }
+                        } else {
+                            withContext(Dispatchers.Default) {
+                                PhotoPipeline.developHalfSecond(context, first, shot, params, name, note, edge)
+                            }
+                            pendingHalf = null
+                            currentOnSaved()
+                        }
+                    }
+
+                    else -> {
+                        shutterFx()
+                        val shot = capture()
+                        val uri = withContext(Dispatchers.Default) {
+                            PhotoPipeline.develop(context, shot, params, name, fmt, note, edge)
+                        }
+                        currentOnSaved()
+                        if (fmt.instantPrint) developing = uri to fmt.frame
                     }
                 }
-            },
-        )
+            } catch (e: Exception) {
+                Toast.makeText(context, "Erreur : ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                busy = false
+                countdown = 0
+                boothPose = 0
+            }
+        }
     }
 
     val evStep = caps?.evStep ?: 0f
@@ -500,11 +559,12 @@ fun CameraScreen(
                 if (inscription.active) {
                     Canvas(Modifier.fillMaxSize()) {
                         drawIntoCanvas { c ->
-                            if (polaroid) {
-                                val p = PolaroidFrame.printRect(size.width, size.height)
-                                Imprint.drawPolaroidCaption(c.nativeCanvas, p.left, p.top, p.width(), inscription)
-                            } else if (format == PhotoFormat.FILM35) {
-                                val h = Film35Frame.holeRect(size.width, size.height)
+                            val fr = format.frame
+                            if (fr is PaperFrame) {
+                                val p = fr.printRect(size.width, size.height)
+                                Imprint.drawCaption(c.nativeCanvas, fr, p.left, p.top, p.width(), inscription)
+                            } else if (fr != null) {
+                                val h = fr.holeRect(size.width, size.height)
                                 Imprint.drawStamp(c.nativeCanvas, h.left, h.top, h.width(), h.height(), inscription)
                             } else {
                                 Imprint.drawStamp(c.nativeCanvas, 0f, 0f, size.width, size.height, inscription)
@@ -571,7 +631,9 @@ fun CameraScreen(
                         modifier = Modifier.weight(1f),
                     )
                     // Jetable : la pastille du flash (le vrai flash du téléphone)
-                    if (format == PhotoFormat.DISPOSABLE && camera?.cameraInfo?.hasFlashUnit() == true) {
+                    if ((format == PhotoFormat.DISPOSABLE || format == PhotoFormat.PHOTOBOOTH) &&
+                        camera?.cameraInfo?.hasFlashUnit() == true
+                    ) {
                         Pill("⚡ FLASH", flashOn, Modifier.padding(end = 8.dp)) { flashOn = !flashOn }
                     }
                     Text(
@@ -630,6 +692,45 @@ fun CameraScreen(
                             "⚠ ignoré par le téléphone : $mismatch",
                             color = Warn, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp),
                         )
+                    }
+                }
+
+                // Demi-format : quelle vue, et la première en vignette
+                if (format == PhotoFormat.HALF_FRAME) {
+                    val first = pendingHalf
+                    val thumb: androidx.compose.ui.graphics.ImageBitmap? by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, first) {
+                        value = first?.let {
+                            withContext(Dispatchers.IO) {
+                                android.graphics.BitmapFactory.decodeFile(it.absolutePath, android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap()
+                            }
+                        }
+                    }
+                    Column(
+                        Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 52.dp),
+                    ) {
+                        Pill(if (first == null) "VUE 1/2" else "VUE 2/2", true) {}
+                        thumb?.let {
+                            androidx.compose.foundation.Image(
+                                it, contentDescription = "Première vue",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(top = 6.dp)
+                                    .size(48.dp, 64.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .border(BorderStroke(1.dp, Amber), RoundedCornerShape(4.dp)),
+                            )
+                        }
+                    }
+                }
+
+                // Photomaton : compte à rebours géant
+                if (format == PhotoFormat.PHOTOBOOTH && boothPose > 0) {
+                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            if (countdown > 0) countdown.toString() else "★",
+                            color = Color.White, fontSize = 96.sp, fontWeight = FontWeight.Bold,
+                        )
+                        Text("POSE $boothPose / ${PhotoFormat.PHOTOBOOTH.shots}", color = Amber, fontSize = 14.sp, letterSpacing = 3.sp)
                     }
                 }
 
@@ -721,7 +822,12 @@ fun CameraScreen(
                         // En Polaroid, uniquement les recettes sur pellicule instantanée
                         // Selon le format : seulement les instantanés (Polaroid) ou les jetables (Jetable)
                         val shown = (customRecipes + Recipes.builtIns).filter { allowedBase(it.base()) }
-                        items(shown, key = { it.id }) { r ->
+                        // rangées par catégorie : mes recettes, Fujifilm, recettes, pellicules, instantanés...
+                        val grouped = shown.groupBy { recipeCategory(it) }.toList()
+                            .sortedBy { RecipeCategoryOrder.indexOf(it.first) }
+                        grouped.forEach { (cat, list) ->
+                        item(key = "rcat_$cat") { CategoryLabel(cat) }
+                        items(list, key = { it.id }) { r ->
                             val selected = r.id == saved.id
                             val accent = filmAccent(r.baseId)
                             Row(
@@ -752,6 +858,7 @@ fun CameraScreen(
                                 }
                             }
                         }
+                        }
                     }
 
                     Tab.Text -> LazyRow(
@@ -773,12 +880,18 @@ fun CameraScreen(
                         }
                     }
 
-                    Tab.Format -> ValueRow(
-                        values = PhotoFormat.entries,
-                        selected = format,
-                        label = { it.label },
-                        onPick = { setFormat(it) },
-                    )
+                    Tab.Format -> LazyRow(
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FormatCategory.entries.forEach { cat ->
+                            item(key = "cat_${cat.name}") { CategoryLabel(cat.label) }
+                            items(PhotoFormat.entries.filter { it.category == cat }, key = { it.name }) { f ->
+                                Chip(f.label, f == format) { setFormat(f) }
+                            }
+                        }
+                    }
 
                     Tab.Lens -> ValueRow(
                         values = lenses,
@@ -1016,9 +1129,30 @@ fun CameraScreen(
     }
 
     // Tirage Polaroid qui se développe après la prise de vue
-    developing?.let { uri -> PolaroidDeveloping(uri) { developing = null } }
+    developing?.let { (uri, frame) -> PrintDeveloping(uri, frame) { developing = null } }
     }
 }
+
+/** Petite étiquette de catégorie dans les listes horizontales. */
+@Composable
+private fun CategoryLabel(text: String) {
+    Text(
+        text,
+        color = Amber.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp,
+        modifier = Modifier.padding(start = 6.dp, end = 2.dp),
+    )
+}
+
+/** Catégorie d'une recette dans le carrousel. */
+private fun recipeCategory(r: Recipe): String = when {
+    !r.builtIn -> "MES RECETTES"
+    r.id.startsWith("r_") -> "RECETTES"
+    else -> r.base().category
+}
+
+private val RecipeCategoryOrder = listOf(
+    "MES RECETTES", "FUJIFILM", "RECETTES", "PELLICULES", "INSTANTANÉS", "JETABLES", "PHOTOMATON", "SANS FILTRE",
+)
 
 @Composable
 private fun ActionCard(icon: String, text: String, onClick: () -> Unit) {

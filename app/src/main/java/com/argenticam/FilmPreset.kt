@@ -37,7 +37,20 @@ data class FilmPreset(
     val disposable: Boolean = false,
     /** Flou vers les coins (objectif en plastique). 0..1 */
     val softCorners: Float = 0f,
+    /** Cabine photo : seul proposé en mode Photomaton. */
+    val booth: Boolean = false,
 )
+
+/** Catégorie d'une pellicule de base, pour trier les listes. */
+val FilmPreset.category: String
+    get() = when {
+        fuji -> "FUJIFILM"
+        instant -> "INSTANTANÉS"
+        disposable -> "JETABLES"
+        booth -> "PHOTOMATON"
+        id == "original" -> "SANS FILTRE"
+        else -> "PELLICULES"
+    }
 
 object Presets {
     private fun v(r: Float, g: Float, b: Float) = floatArrayOf(r, g, b)
@@ -106,6 +119,19 @@ object Presets {
             id = "disposablebw", name = "Jetable N&B", subtitle = "jetable · noir et blanc dur", disposable = true,
             bw = true, contrast = 1.2f, fade = 0.03f,
             grain = 0.18f, grainSize = 1.7f, vignette = 0.6f, softCorners = 0.9f,
+        ),
+        // --- Photomaton ---
+        FilmPreset(
+            id = "boothbw", name = "Photomaton N&B", subtitle = "cabine · noir et blanc, flash", booth = true,
+            bw = true, exposure = 0.12f, contrast = 1.3f, fade = 0.02f,
+            grain = 0.08f, grainSize = 1.3f, vignette = 0.2f,
+        ),
+        FilmPreset(
+            id = "boothcolor", name = "Photomaton 70s", subtitle = "cabine · couleur passée", booth = true,
+            exposure = 0.08f, contrast = 0.95f, saturation = 0.8f, fade = 0.08f,
+            gain = v(1.06f, 1.0f, 0.9f),
+            highlightTint = v(0.02f, 0.012f, -0.01f),
+            grain = 0.1f, grainSize = 1.4f, vignette = 0.25f,
         ),
         // --- Pellicules ---
         FilmPreset(

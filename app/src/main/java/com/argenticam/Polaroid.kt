@@ -67,18 +67,18 @@ object Polaroid {
  * comme un vrai instantané. Toucher pour fermer.
  */
 @Composable
-fun PolaroidDeveloping(uri: Uri, onDone: () -> Unit) {
+fun PrintDeveloping(uri: Uri, frame: PrintFrame?, onDone: () -> Unit) {
     val context = LocalContext.current
     val print: ImageBitmap? by produceState<ImageBitmap?>(null, uri) {
         value = withContext(Dispatchers.IO) { PhotoLibrary.decode(context, uri, 1600)?.asImageBitmap() }
     }
     val slide = remember { Animatable(1f) }
-    val reveal = remember { Animatable(0f) }
+    val reveal = remember { Animatable(if (frame == null) 1f else 0f) }
     LaunchedEffect(print) {
         if (print == null) return@LaunchedEffect
         slide.animateTo(0f, tween(900, easing = FastOutSlowInEasing))
-        launch { reveal.animateTo(1f, tween(5000, easing = LinearEasing)) }
-        delay(6500)
+        if (frame != null) launch { reveal.animateTo(1f, tween(5000, easing = LinearEasing)) }
+        delay(if (frame != null) 6500 else 3500)
         onDone()
     }
 
@@ -91,23 +91,27 @@ fun PolaroidDeveloping(uri: Uri, onDone: () -> Unit) {
     ) {
         val bmp = print
         if (bmp != null) {
+            val aspect = frame?.let { it.printW / it.printH } ?: (bmp.width.toFloat() / bmp.height)
             BoxWithConstraints(
                 Modifier
-                    .fillMaxWidth(0.78f)
-                    .aspectRatio(Polaroid.PRINT_W / Polaroid.PRINT_H)
-                    .offset { IntOffset(0, (slide.value * 1400).roundToInt()) }
+                    // tirage large (Spectra) ou bande haute (photomaton) : on garde tout à l'écran
+                    .fillMaxWidth(if (aspect < 0.4f) 0.3f else 0.78f)
+                    .aspectRatio(aspect)
+                    .offset { IntOffset(0, (slide.value * 2400).roundToInt()) }
                     .shadow(18.dp),
             ) {
                 Image(bmp, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
                 // voile de développement sur la fenêtre de l'image
-                val k = maxWidth / Polaroid.PRINT_W
-                Box(
-                    Modifier
-                        .offset(x = k * Polaroid.SIDE, y = k * Polaroid.TOP)
-                        .size(k * Polaroid.IMAGE)
-                        .alpha(1f - reveal.value)
-                        .background(Color(0xFF2B3633)),
-                )
+                if (frame != null) {
+                    val k = maxWidth / frame.printW
+                    Box(
+                        Modifier
+                            .offset(x = k * frame.holeX, y = k * frame.holeY)
+                            .size(k * frame.holeW, k * frame.holeH)
+                            .alpha(1f - reveal.value)
+                            .background(Color(0xFF2B3633)),
+                    )
+                }
             }
         }
         Text(

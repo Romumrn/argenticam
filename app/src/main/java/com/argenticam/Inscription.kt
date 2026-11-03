@@ -92,11 +92,14 @@ object Imprint {
     }
 
     /**
-     * Légende manuscrite sur le bord du bas d'un Polaroid dont le tirage commence en
-     * ([printLeft], [printTop]) et fait [printWidth] de large.
+     * Légende manuscrite sur le bord du bas d'un tirage instantané ([frame]) dont le coin est en
+     * ([printLeft], [printTop]) et qui fait [printWidth] de large.
      */
     @Synchronized
-    fun drawPolaroidCaption(canvas: Canvas, printLeft: Float, printTop: Float, printWidth: Float, i: Inscription, date: Date = Date()) {
+    fun drawCaption(
+        canvas: Canvas, frame: PrintFrame, printLeft: Float, printTop: Float, printWidth: Float,
+        i: Inscription, date: Date = Date(),
+    ) {
         if (!i.active) return
         val parts = buildList {
             if (i.mode.hasText && i.text.isNotBlank()) add(i.text.trim())
@@ -104,15 +107,15 @@ object Imprint {
         }
         if (parts.isEmpty()) return
         val line = parts.joinToString("  ·  ")
-        val k = printWidth / Polaroid.PRINT_W
-        val size = 6f * k
+        val k = printWidth / frame.printW
+        val bottomTop = printTop + (frame.holeY + frame.holeH) * k
+        val bottomH = (frame.printH - frame.holeY - frame.holeH) * k
+        val size = minOf(6f * k, bottomH * 0.42f)
         handPaint.textSize = size
-        val maxW = (Polaroid.PRINT_W - 2 * Polaroid.SIDE - 4f) * k
+        val maxW = (frame.printW - 2 * frame.holeX - 4f) * k
         val tw = handPaint.measureText(line)
         if (tw > maxW) handPaint.textSize = size * maxW / tw
-        // au milieu du bord du bas (sous l'image de 79 mm)
-        val bottomTop = printTop + (Polaroid.TOP + Polaroid.IMAGE) * k
-        val bottomH = (Polaroid.PRINT_H - Polaroid.TOP - Polaroid.IMAGE) * k
+        // au milieu du bord du bas
         val baseline = bottomTop + bottomH * 0.5f + handPaint.textSize * 0.35f
         canvas.save()
         // légère inclinaison, comme écrit à la main

@@ -50,7 +50,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `PhotoPipeline.kt` | JPEG CameraX → rotation → shader → MediaStore (`Pictures/ArgentiCam`) |
 | `LutCache.kt` | Chargement des LUT 3D depuis `assets/luts/` |
 | `RetroDial.kt` | La molette rétro (crans, vibration, inertie) |
-| `Frames.kt` | `PhotoFormat` (Standard, Polaroid, 35 mm, Jetable) et `PrintFrame` : géométrie en mm, recadrage, composition, `drawBorder` partagé viseur / photo |
+| `Frames.kt` | `PhotoFormat` (par `FormatCategory`) et `PrintFrame` : géométrie en mm, recadrage, composition, `drawBorder` partagé viseur / photo. `PaperFrame` = instantanés ; bandes multi-photos : `HalfFrameStrip`, `PhotoboothStrip` |
 | `Polaroid.kt` | Mode Polaroid : géométrie (Polaroid 600), recadrage carré, cadre papier, masque du viseur, développement animé |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée, MediaStore, compteur de rouleau |
 | `Inscription.kt` | Date / petit mot imprimés (dos dateur orange, légende manuscrite Polaroid), même code pour le viseur et la photo |
@@ -91,7 +91,10 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
   (rempli entièrement sur certains Xiaomi). Les pellicules `instant = true` sont les seules proposées en mode Polaroid.
 - **Formats encadrés** : tout passe par `PrintFrame` (`Frames.kt`). `drawBorder` dessine le cadre sans jamais toucher
   la fenêtre de l'image, avec le même code dans le viseur et sur la photo. Un nouveau format = une nouvelle `PrintFrame`.
-  Les pellicules `disposable = true` sont les seules proposées en mode Jetable (comme `instant` en Polaroid).
+  Les pellicules proposées dépendent de `PhotoFormat.allows` (`instant`, `disposable`, `booth`).
+  Formats à plusieurs déclenchements (`shots` > 1) : demi-format (1re vue gardée dans le cache, `PhotoPipeline.developHalf*`)
+  et photomaton (4 `Capture` enchaînées avec compte à rebours, `developBooth`). Les captures passent par `capture()`
+  (coroutine) : on lit le JPEG tout de suite, le développement se fait après.
 - **Balance des blancs** : `AUTO` ou `KELVIN`. En Kelvin, le téléphone est calé en lumière du jour
   et le shader convertit vers la température choisie (`kelvinGain` dans `Recipe.kt`).
 - Pas de `AnimatedVisibility` directement dans un `Box` imbriqué dans un `Column` (conflit de

@@ -11,6 +11,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - **Acros** et **Monochrome**, avec les filtres N&B Jaune / Rouge / Vert et la teinte monochrome chaud/froid et magenta/vert
 - **Pellicules instantanées** : Polaroid 600, SX-70, i-Type, Polaroid N&B, Polaroid périmé, Instax
 - **Appareils jetables** : Jetable 400, Jetable 800, Jetable N&B
+- **Photomaton** : Photomaton N&B, Photomaton 70s
 - Pellicules argentiques (approximations faites main) : Portra 400, Gold 200, Superia 400, Tri-X 400, CineStill 800T, Ektachrome, Lomo, et Original
 - Quelques recettes prêtes à l'emploi : Kodachrome 64, Portra (recette), Nostalgie 70s, Acros +R, Nuit tungstène
 - **Crée et sauvegarde tes propres recettes**, avec l'aperçu en direct pendant l'édition. Tous les réglages d'un boîtier Fuji :
@@ -27,6 +28,11 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - **Lecture réelle du capteur** : l'écran affiche la vitesse, l'ISO et la distance de mise au point que le téléphone applique *vraiment*, et prévient s'il ignore un réglage manuel
 - Choix de l'**objectif** (ultra grand-angle, principal, télé) selon ce que le téléphone expose
 - **Mode Polaroid** : cadre Polaroid 600 dans le viseur (le carré visé = la photo), tirage carré posé sur un cadre papier crème aux vraies proportions (88 × 107 mm), et **développement animé** après la prise de vue. En mode Polaroid, seules les recettes sur pellicule instantanée sont proposées
+- **Formats rangés par catégorie** (onglet FORMAT) :
+  - *Instantanés* : Polaroid 600, Polaroid Go, Polaroid Spectra, Instax Mini — tirage aux vraies proportions, développement animé, légende manuscrite sur le bord
+  - *Pellicule* : 35 mm, **demi-format** (2 vues verticales côte à côte sur une vue 35 mm, en 2 déclenchements), **moyen format 6×6** (carré 56 mm aux coins arrondis, marquages de pellicule 120)
+  - *Fun* : jetable, **photomaton** (4 poses avec compte à rebours, bande de cabine photo)
+- Les recettes et les pellicules de base sont aussi rangées par catégorie (Mes recettes, Fujifilm, Recettes, Pellicules, Instantanés, Jetables, Photomaton)
 - **Pellicule 35 mm** : la photo au format 24×36 sur une bande de film scannée, avec perforations, nom de la pellicule et numéro de vue imprimés sur les bords (aperçu dans le viseur)
 - **Appareil jetable** : couleurs saturées, gros grain, vignettage, coins flous d'objectif en plastique, vrai flash du téléphone et date orange automatique ; seules les pellicules jetables sont proposées
 - **Date et petit mot** imprimés sur la photo : date orange lumineuse façon compact argentique (`'26 11 03`) sur les photos normales, légende manuscrite au feutre sur le bord du Polaroid ; le texte se tape au clavier, l'aperçu est visible dans le viseur

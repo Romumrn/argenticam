@@ -64,6 +64,8 @@ fun filmAccent(id: String): Color = when (id) {
     "disposable400" -> Color(0xFFFFB347)
     "disposable800" -> Color(0xFFB0E57C)
     "disposablebw" -> Color(0xFFCFCFCF)
+    "boothbw" -> Color(0xFFE0E0E0)
+    "boothcolor" -> Color(0xFFE8B98A)
     else -> Color.White
 }
 
@@ -133,7 +135,14 @@ fun RecipeEditor(
                 contentPadding = PaddingValues(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(Presets.all.filter(baseFilter), key = { it.id }) { p ->
+                Presets.all.filter(baseFilter).groupBy { it.category }.forEach { (cat, films) ->
+                item(key = "bcat_$cat") {
+                    Text(
+                        cat, color = Amber.copy(alpha = 0.7f), fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 6.dp, end = 2.dp),
+                    )
+                }
+                items(films, key = { it.id }) { p ->
                     val sel = p.id == r.baseId
                     val accent = filmAccent(p.id)
                     Row(
@@ -152,6 +161,7 @@ fun RecipeEditor(
                         Spacer(Modifier.width(8.dp))
                         Text(p.name, color = if (sel) accent else Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
+                }
                 }
             }
 
