@@ -74,6 +74,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -263,6 +265,41 @@ fun CameraScreen(
             )
             .build()
     }
+
+    // ---------- Orientation : l'écran reste en portrait, les commandes pivotent ----------
+    // rotation du téléphone en degrés (0 = portrait, 90 = tourné vers la droite, 270 = vers la gauche)
+    var deviceRot by remember { mutableIntStateOf(0) }
+    DisposableEffect(Unit) {
+        val listener = object : android.view.OrientationEventListener(context) {
+            override fun onOrientationChanged(o: Int) {
+                if (o == ORIENTATION_UNKNOWN) return
+                val target = ((o + 45) / 90 % 4) * 90
+                // un peu d'hystérésis : on ne bascule que bien engagé dans la nouvelle position
+                if (target != deviceRot && abs(((o - target + 540) % 360) - 180) < 30) deviceRot = target
+            }
+        }
+        listener.enable()
+        onDispose { listener.disable() }
+    }
+    // la photo est enregistrée dans le sens où l'on tient le téléphone
+    LaunchedEffect(deviceRot) {
+        imageCapture.targetRotation = when (deviceRot) {
+            90 -> android.view.Surface.ROTATION_270
+            180 -> android.view.Surface.ROTATION_180
+            270 -> android.view.Surface.ROTATION_90
+            else -> android.view.Surface.ROTATION_0
+        }
+    }
+    val uiAngle by animateFloatAsState(
+        when (deviceRot) {
+            90 -> -90f
+            180 -> 180f
+            270 -> 90f
+            else -> 0f
+        },
+        label = "rotation",
+    )
+    val landscape = deviceRot % 180 != 0
 
     BackHandler(enabled = editing) { editing = false }
     BackHandler(enabled = sheet != null) { sheet = null }
@@ -844,20 +881,24 @@ fun CameraScreen(
                             peaking && mfActive,
                             if (loupe && mfActive) 3f else 1f,
                             loupeCenter.x, loupeCenter.y,
-                            format.frame?.shaderFrame ?: FilmProgram.FULL_FRAME,
+                            format.frame?.takeIf { _ -> it.width > 0 && it.height > 0 }
+                                ?.shaderFrameOnScreen(it.width.toFloat(), it.height.toFloat(), deviceRot)
+                                ?: FilmProgram.FULL_FRAME,
                         )
                     },
                 )
                 val viewEdge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
-                format.frame?.let { FrameViewfinderMask(it, viewEdge, Modifier.fillMaxSize()) }
+                format.frame?.let { FrameViewfinderMask(it, viewEdge, deviceRot, Modifier.fillMaxSize()) }
                 // aides à la composition (grille, coins, niveau), dans la fenêtre de l'image
                 CompositionGuides(
                     display,
                     area = { w, h ->
-                        format.frame?.holeRect(w, h)?.let { androidx.compose.ui.geometry.Rect(it.left, it.top, it.right, it.bottom) }
+                        format.frame?.holeRectOnScreen(w, h, deviceRot)
+                            ?.let { androidx.compose.ui.geometry.Rect(it.left, it.top, it.right, it.bottom) }
                             ?: androidx.compose.ui.geometry.Rect(0f, 0f, w, h)
                     },
                     roll = roll,
+                    rotation = deviceRot,
                     modifier = Modifier.fillMaxSize(),
                 )
 
@@ -867,8 +908,12 @@ fun CameraScreen(
                         drawIntoCanvas { c ->
                             val fr = format.frame
                             if (fr is PaperFrame) {
-                                val p = fr.printRect(size.width, size.height)
+                                val (pw, ph) = physicalSize(size.width, size.height, deviceRot)
+                                val p = fr.printRect(pw, ph)
+                                c.nativeCanvas.save()
+                                c.nativeCanvas.concat(fr.layoutMatrix(size.width, size.height, deviceRot))
                                 Imprint.drawCaption(c.nativeCanvas, fr, p.left, p.top, p.width(), inscription)
+                                c.nativeCanvas.restore()
                             } else if (fr != null) {
                                 val h = fr.holeRect(size.width, size.height)
                                 Imprint.drawStamp(c.nativeCanvas, h.left, h.top, h.width(), h.height(), inscription)
@@ -922,6 +967,13 @@ fun CameraScreen(
                     }
                 }
 
+                // Infos du viseur (compteur, affichage, exposition...) : pivotent avec le téléphone
+                Box(
+                    Modifier
+                        .align(Alignment.Center)
+                        .requiredSize(if (landscape) w * 4f / 3f else w, if (landscape) w else w * 4f / 3f)
+                        .graphicsLayer { rotationZ = uiAngle },
+                ) {
                 // En haut : nom, compteur de poses, éditeur de recette
                 Row(
                     Modifier
@@ -1030,6 +1082,8 @@ fun CameraScreen(
                     }
                 }
 
+                }
+
                 // Flash blanc au déclenchement
                 Box(Modifier.fillMaxSize().alpha(flash.value).background(Color.White))
             }
@@ -1081,14 +1135,17 @@ fun CameraScreen(
                         .padding(horizontal = 18.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    RecipeThumb(recipe, 22.dp, 28.dp)
+                    RecipeThumb(recipe, 22.dp, 28.dp, Modifier.graphicsLayer { rotationZ = uiAngle })
+                    // en paysage, la pastille se réduit à la vignette (le texte serait de travers)
+                    if (!landscape) {
                     Spacer(Modifier.width(10.dp))
                     Text(
                         recipe.name + if (modified) " •" else "",
                         color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1,
                     )
+                    }
                     // le format, s'il n'est pas le standard (il se choisit dans la bibliothèque)
-                    if (format != PhotoFormat.STANDARD) {
+                    if (format != PhotoFormat.STANDARD && !landscape) {
                         Text(
                             "  ·  ${format.short}",
                             color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1,
@@ -1107,6 +1164,7 @@ fun CameraScreen(
                     Box(
                         Modifier
                             .size(54.dp)
+                            .graphicsLayer { rotationZ = uiAngle }
                             .clip(RoundedCornerShape(14.dp))
                             .border(BorderStroke(1.5.dp, Color.White.copy(alpha = 0.25f)), RoundedCornerShape(14.dp))
                             .clickable { onOpenGallery() },
@@ -1129,8 +1187,10 @@ fun CameraScreen(
 
                     ShutterButton(busy = busy, onClick = { takePhoto() })
 
-                    SlidersButton(active = sheet == Sheet.Settings) {
-                        sheet = if (sheet == Sheet.Settings) null else Sheet.Settings
+                    Box(Modifier.graphicsLayer { rotationZ = uiAngle }) {
+                        SlidersButton(active = sheet == Sheet.Settings) {
+                            sheet = if (sheet == Sheet.Settings) null else Sheet.Settings
+                        }
                     }
                 }
 

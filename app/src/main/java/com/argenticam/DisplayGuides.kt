@@ -107,7 +107,13 @@ fun rememberRoll(enabled: Boolean): State<Float?> {
  * ou le carré d'un Polaroid, la vue d'une bande 35 mm...).
  */
 @Composable
-fun CompositionGuides(prefs: DisplayPrefs, area: (Float, Float) -> Rect, roll: Float?, modifier: Modifier = Modifier) {
+fun CompositionGuides(
+    prefs: DisplayPrefs,
+    area: (Float, Float) -> Rect,
+    roll: Float?,
+    rotation: Int = 0,
+    modifier: Modifier = Modifier,
+) {
     Canvas(modifier) {
         val r = area(size.width, size.height)
         val faint = Color.White.copy(alpha = 0.22f)
@@ -145,7 +151,7 @@ fun CompositionGuides(prefs: DisplayPrefs, area: (Float, Float) -> Rect, roll: F
         }
 
         if (prefs.corners) corners(r)
-        if (prefs.level && roll != null) level(r, roll)
+        if (prefs.level && roll != null) level(r, roll, rotation)
     }
 }
 
@@ -166,9 +172,11 @@ private fun DrawScope.corners(r: Rect) {
 }
 
 /** Niveau : une ligne qui reste parallèle à l'horizon, ambre quand le téléphone est droit. */
-private fun DrawScope.level(r: Rect, roll: Float) {
+private fun DrawScope.level(r: Rect, roll: Float, rotation: Int) {
     val c = r.center
-    val straight = abs(roll) < 1f
+    // écart à l'horizontale pour la façon dont on tient le téléphone (portrait ou paysage)
+    val deviation = ((roll + rotation + 540f) % 360f) - 180f
+    val straight = abs(deviation) < 1f
     val color = if (straight) Amber else Color.White.copy(alpha = 0.85f)
     val half = r.width * 0.22f
     val gap = 10.dp.toPx()

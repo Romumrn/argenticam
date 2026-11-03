@@ -149,19 +149,43 @@ abstract class PrintFrame(
         return RectF(l, t, l + holeW * k, t + holeH * k)
     }
 
-    /** Fenêtre de l'image en fractions du viseur 3:4 (origine en haut à gauche) : sert à recadrer la photo. */
-    val cropFraction: RectF by lazy {
-        holeRect(1f, 4f / 3f).let { RectF(it.left, it.top / (4f / 3f), it.right, it.bottom / (4f / 3f)) }
+    /**
+     * Fenêtre de l'image en fractions d'un viseur de proportions [aspect] (largeur / hauteur ;
+     * 3:4 en portrait, 4:3 quand on tient le téléphone en paysage), origine en haut à gauche.
+     */
+    fun cropFraction(aspect: Float): RectF {
+        val h = 1f / aspect
+        return holeRect(1f, h).let { RectF(it.left, it.top / h, it.right, it.bottom / h) }
     }
 
-    /** Même zone pour le shader de l'aperçu : x, y, l, h avec l'origine en bas à gauche. */
-    val shaderFrame: FloatArray by lazy {
-        cropFraction.let { floatArrayOf(it.left, 1f - it.bottom, it.width(), it.height()) }
+    /**
+     * Passage du tirage "tel que le voit le photographe" à l'écran : le téléphone tourné de
+     * [rotation]° (0, 90, 180, 270), le tirage reste droit pour lui.
+     */
+    fun layoutMatrix(w: Float, h: Float, rotation: Int): android.graphics.Matrix {
+        val (pw, ph) = physicalSize(w, h, rotation)
+        return android.graphics.Matrix().apply {
+            postTranslate(-pw / 2f, -ph / 2f)
+            postRotate(-rotation.toFloat())
+            postTranslate(w / 2f, h / 2f)
+        }
     }
 
-    /** Recadre la photo (3:4 portrait, à l'endroit) sur la fenêtre visée. */
+    /** Fenêtre de l'image sur l'écran, le téléphone tourné de [rotation]°. */
+    fun holeRectOnScreen(w: Float, h: Float, rotation: Int): RectF {
+        val (pw, ph) = physicalSize(w, h, rotation)
+        return holeRect(pw, ph).also { layoutMatrix(w, h, rotation).mapRect(it) }
+    }
+
+    /** Même zone pour le shader de l'aperçu : x, y, l, h en fractions, origine en bas à gauche. */
+    fun shaderFrameOnScreen(w: Float, h: Float, rotation: Int): FloatArray {
+        val r = holeRectOnScreen(w, h, rotation)
+        return floatArrayOf(r.left / w, 1f - r.bottom / h, r.width() / w, r.height() / h)
+    }
+
+    /** Recadre la photo (à l'endroit, en portrait ou en paysage) sur la fenêtre visée. */
     fun crop(src: Bitmap): Bitmap {
-        val c = cropFraction
+        val c = cropFraction(src.width.toFloat() / src.height)
         val x = (c.left * src.width).roundToInt()
         val y = (c.top * src.height).roundToInt()
         val w = minOf((c.width() * src.width).roundToInt(), src.width - x)
@@ -340,6 +364,21 @@ object HalfFrameStrip {
     private const val GAP = 1f
 
     fun compose(first: Bitmap, second: Bitmap, edge: EdgeInfo): Bitmap {
+        if (first.width > first.height) {
+            // tenu en paysage : on compose la bande "couchée" puis on la redresse (bande verticale)
+            fun turn(b: Bitmap, deg: Float) =
+                Bitmap.createBitmap(b, 0, 0, b.width, b.height, android.graphics.Matrix().apply { postRotate(deg) }, true)
+            val a = turn(first, -90f)
+            val b = turn(second, -90f)
+            val strip = composeUpright(a, b, edge)
+            a.recycle()
+            b.recycle()
+            return turn(strip, 90f).also { strip.recycle() }
+        }
+        return composeUpright(first, second, edge)
+    }
+
+    private fun composeUpright(first: Bitmap, second: Bitmap, edge: EdgeInfo): Bitmap {
         val k = first.width / HALF_W
         val out = Bitmap.createBitmap((W * k).roundToInt(), (H * k).roundToInt(), Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
@@ -379,9 +418,14 @@ object PhotoboothStrip {
 
     /** Recadre une photo 3:4 au format 35 x 45 (centré). */
     fun crop(src: Bitmap): Bitmap {
-        val w = src.width
-        val h = minOf(src.height, (w * FRAME_H / FRAME_W).roundToInt())
-        return Bitmap.createBitmap(src, 0, (src.height - h) / 2, w, h)
+        val target = FRAME_W / FRAME_H
+        return if (src.width.toFloat() / src.height > target) {
+            val w = (src.height * target).roundToInt()
+            Bitmap.createBitmap(src, (src.width - w) / 2, 0, w, src.height)
+        } else {
+            val h = (src.width / target).roundToInt()
+            Bitmap.createBitmap(src, 0, (src.height - h) / 2, src.width, h)
+        }
     }
 
     fun compose(frames: List<Bitmap>): Bitmap {
@@ -402,16 +446,27 @@ object PhotoboothStrip {
     }
 }
 
-/** Le cadre dessiné par-dessus le viseur : noir autour du tirage, puis le cadre lui-même. */
+/** Taille du viseur "vue par le photographe" : largeur et hauteur échangées en paysage. */
+fun physicalSize(w: Float, h: Float, rotation: Int): Pair<Float, Float> =
+    if (rotation % 180 != 0) h to w else w to h
+
+/**
+ * Le cadre dessiné par-dessus le viseur : noir autour du tirage, puis le cadre lui-même,
+ * toujours droit pour le photographe (le téléphone tourné de [rotation]°).
+ */
 @Composable
-fun FrameViewfinderMask(frame: PrintFrame, edge: EdgeInfo, modifier: Modifier = Modifier) {
+fun FrameViewfinderMask(frame: PrintFrame, edge: EdgeInfo, rotation: Int, modifier: Modifier = Modifier) {
     ComposeCanvas(modifier) {
-        val p = frame.printRect(size.width, size.height)
+        val (pw, ph) = physicalSize(size.width, size.height, rotation)
+        val p = frame.printRect(pw, ph)
         val ink = Paint().apply { color = 0xFF0B0B0B.toInt() }
         drawIntoCanvas { c ->
             val nc = c.nativeCanvas
-            fillAround(nc, 0f, 0f, size.width, size.height, p, ink)
+            nc.save()
+            nc.concat(frame.layoutMatrix(size.width, size.height, rotation))
+            fillAround(nc, 0f, 0f, pw, ph, p, ink)
             frame.drawBorder(nc, p.left, p.top, p.width() / frame.printW, edge)
+            nc.restore()
         }
     }
 }

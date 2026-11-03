@@ -21,6 +21,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
   - En plus : vignettage, halation, intensité du film
 
 **Prise de vue**
+- **Rotation** : l'écran reste en portrait (comme l'appareil photo d'Android) mais les boutons et les infos pivotent quand on tourne le téléphone, la photo est enregistrée dans le bon sens, et les cadres (Polaroid, Instax, 35 mm…) restent droits pour le photographe
 - **Déclenchement immédiat** : capture à latence minimale, développement en arrière-plan (on peut enchaîner les photos ; un indicateur tourne sur la vignette pendant le développement)
 - **Affichage du viseur** (bouton en haut à droite) : grille de composition (tiers, nombre d'or, quadrillage, diagonales, centre), **niveau** d'horizon, infos d'exposition et coins du viseur à afficher ou masquer
 - **Interface minimale** : grand viseur, la pellicule en cours (toucher = bibliothèque des recettes par catégorie) et le déclencheur. Les réglages sont dans un **tiroir** (glisser vers le haut) rangé en Exposition, Mise au point · Objectif, Tirage et Image ; toucher une case ouvre sa molette juste en dessous
@@ -40,7 +41,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - **Appareil jetable** : couleurs saturées, gros grain, vignettage, coins flous d'objectif en plastique, vrai flash du téléphone et date orange automatique ; seules les pellicules jetables sont proposées
 - **Date et petit mot** sur les tirages instantanés (Polaroid, Instax) : légende manuscrite au feutre sur le bord du bas ; le texte se tape au clavier, l'aperçu est visible dans le viseur
 - **Le format et la pellicule vont ensemble** : choisir une pellicule Polaroid passe en format Polaroid, une pellicule de photomaton en photomaton, etc. ; chaque format ne propose que ses pellicules. Le format se choisit dans la bibliothèque des pellicules, parmi les variantes de la pellicule choisie (3:4, 35 mm, demi-format, 6×6 pour une pellicule classique ; 600, Go, Spectra, Instax pour un instantané)
-- **Vignettes des pellicules** : chaque recette est montrée sur une petite scène de référence développée avec son rendu (dans son cadre pour les instantanés, une icône de bande photo pour le photomaton)
+- **Vignettes des pellicules** : chaque recette est montrée sur une photo de référence (la Petite France à Strasbourg) développée avec son rendu (dans son cadre pour les instantanés, une icône de bande photo pour le photomaton)
 - Compteur de poses façon rouleau de **36 vues**, **galerie intégrée** en deux catégories : **Pellicule** (les photos classiques en planche contact, rouleaux de 36 vues, perforations, nom de la pellicule et numéros de vue) et **Tirages** (Polaroid, Instax, photomaton, bandes 35 mm, 6×6, demi-format, à leurs vraies proportions) ; visionneuse avec **zoom**, partage, suppression
 - **Qualité maximale** : capture à la plus haute résolution du mode normal du capteur, développement par tuiles sans perte de résolution, JPEG qualité 100, métadonnées EXIF conservées (date, appareil, vitesse, ISO, focale ; la recette est notée dans la description)
 - Photos enregistrées dans `Pictures/ArgentiCam`
