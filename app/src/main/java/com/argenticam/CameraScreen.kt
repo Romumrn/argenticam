@@ -29,6 +29,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +38,10 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -110,6 +115,8 @@ private val Warn = Color(0xFFFF6B5B)
 private enum class Tab(val label: String) {
     Recipe("RECETTE"), Format("FORMAT"), Text("TEXTE"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
 }
+
+private enum class Sheet { Settings, Library }
 
 private enum class FocusUi { Idle, Searching, Locked, Failed, Manual }
 
@@ -187,7 +194,8 @@ fun CameraScreen(
     var zoom by remember { mutableStateOf(1f) }
     var peaking by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
-    var tab by remember { mutableStateOf(Tab.Recipe) }
+    var tab by remember { mutableStateOf(Tab.Recipe) } // Tab.Recipe = aucun réglage déplié
+    var sheet by remember { mutableStateOf<Sheet?>(null) }
     var format by remember { mutableStateOf(PhotoFormat.STANDARD) }
     val polaroid = format == PhotoFormat.POLAROID
     var flashOn by remember { mutableStateOf(false) }
@@ -237,6 +245,7 @@ fun CameraScreen(
     }
 
     BackHandler(enabled = editing) { editing = false }
+    BackHandler(enabled = sheet != null) { sheet = null }
 
     // La caméra ne tourne que quand l'écran caméra est visible.
     DisposableEffect(lifecycleOwner, active, boundLensId) {
@@ -528,283 +537,11 @@ fun CameraScreen(
     val calibrated = caps?.focusCalibrated ?: true
     val mfActive = settings.focusMode == FocusMode.MF
 
-    Box(Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize().background(Ink)) {
-        // ================= Viseur =================
-        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
-            val w = minOf(maxWidth - 20.dp, maxHeight * 0.75f)
-            Box(
-                Modifier
-                    .size(w, w * 4f / 3f)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Color.Black),
-            ) {
-                AndroidView(
-                    factory = { previewView },
-                    modifier = Modifier.fillMaxSize(),
-                    update = {
-                        it.setRender(
-                            renderParams,
-                            peaking && mfActive,
-                            if (loupe && mfActive) 3f else 1f,
-                            loupeCenter.x, loupeCenter.y,
-                            format.frame?.shaderFrame ?: FilmProgram.FULL_FRAME,
-                        )
-                    },
-                )
-                val viewEdge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
-                format.frame?.let { FrameViewfinderMask(it, viewEdge, Modifier.fillMaxSize()) } ?: ViewfinderFrame()
-
-                // Date / petit mot, dessinés avec le même code que sur la photo finale
-                if (inscription.active) {
-                    Canvas(Modifier.fillMaxSize()) {
-                        drawIntoCanvas { c ->
-                            val fr = format.frame
-                            if (fr is PaperFrame) {
-                                val p = fr.printRect(size.width, size.height)
-                                Imprint.drawCaption(c.nativeCanvas, fr, p.left, p.top, p.width(), inscription)
-                            } else if (fr != null) {
-                                val h = fr.holeRect(size.width, size.height)
-                                Imprint.drawStamp(c.nativeCanvas, h.left, h.top, h.width(), h.height(), inscription)
-                            } else {
-                                Imprint.drawStamp(c.nativeCanvas, 0f, 0f, size.width, size.height, inscription)
-                            }
-                        }
-                    }
-                }
-
-                // Toucher = mise au point à cet endroit
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .pointerInput(Unit) {
-                            detectTapGestures { pos -> onViewfinderTap(pos, size.width, size.height) }
-                        },
-                )
-
-                // Cadre de mise au point
-                focusPoint?.let { p ->
-                    val color = when (focusState) {
-                        FocusUi.Locked -> Amber
-                        FocusUi.Failed -> Warn
-                        FocusUi.Manual -> Color.White.copy(alpha = 0.6f)
-                        else -> Color.White
-                    }
-                    Canvas(Modifier.fillMaxSize()) {
-                        val half = 34.dp.toPx() * reticleScale.value
-                        val len = 11.dp.toPx()
-                        val sw = 2.dp.toPx()
-                        fun seg(a: Offset, b: Offset) = drawLine(color, a, b, strokeWidth = sw, cap = StrokeCap.Round)
-                        val l = p.x - half
-                        val r = p.x + half
-                        val t = p.y - half
-                        val b = p.y + half
-                        seg(Offset(l, t), Offset(l + len, t)); seg(Offset(l, t), Offset(l, t + len))
-                        seg(Offset(r, t), Offset(r - len, t)); seg(Offset(r, t), Offset(r, t + len))
-                        seg(Offset(l, b), Offset(l + len, b)); seg(Offset(l, b), Offset(l, b - len))
-                        seg(Offset(r, b), Offset(r - len, b)); seg(Offset(r, b), Offset(r, b - len))
-                        drawCircle(color, 2.dp.toPx(), p)
-                    }
-                    if (focusState == FocusUi.Locked && settings.focusMode == FocusMode.AFS) {
-                        Text(
-                            "AF-L",
-                            color = Amber, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.offset {
-                                IntOffset((p.x - 16.dp.toPx()).roundToInt(), (p.y + 40.dp.toPx()).roundToInt())
-                            },
-                        )
-                    }
-                }
-
-                // En haut : nom, compteur de poses, éditeur de recette
-                Row(
-                    Modifier
-                        .align(Alignment.TopStart)
-                        .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)))
-                        .padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        if (loupe && mfActive) "LOUPE ×3" else "ARGENTICAM",
-                        color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    // Jetable : la pastille du flash (le vrai flash du téléphone)
-                    if ((format == PhotoFormat.DISPOSABLE || format == PhotoFormat.PHOTOBOOTH) &&
-                        camera?.cameraInfo?.hasFlashUnit() == true
-                    ) {
-                        Pill("⚡ FLASH", flashOn, Modifier.padding(end = 8.dp)) { flashOn = !flashOn }
-                    }
-                    Text(
-                        RollCounter.label(shots),
-                        color = Amber, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(0xFF1E1A12).copy(alpha = 0.85f))
-                            .border(BorderStroke(1.dp, Amber.copy(alpha = 0.35f)), RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
-                    )
-                    Box(
-                        Modifier.size(40.dp).clip(CircleShape).clickable { editing = !editing },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Default.Edit, contentDescription = "Modifier la recette",
-                            tint = if (editing) Amber else Color.White, modifier = Modifier.size(20.dp),
-                        )
-                    }
-                }
-
-                // En bas : recette + ce que le capteur fait réellement, comme l'écran d'un Fuji
-                Column(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))))
-                        .padding(start = 18.dp, end = 18.dp, top = 28.dp, bottom = 12.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(filmAccent(recipe.baseId)))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            recipe.name + if (modified) " •" else "",
-                            color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                        )
-                    }
-                    val shutterTxt = readout.exposureNs?.let { shutterLabel(it) }
-                        ?: if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO"
-                    val isoTxt = readout.iso?.toString() ?: if (settings.manual) settings.iso.toString() else "AUTO"
-                    val evTxt = if (!settings.manual && settings.evIndex != 0) "  EV ${evLabel(settings.evIndex, evStep)}" else ""
-                    Text(
-                        "${if (settings.manual) "M" else "A"}  $shutterTxt  ISO $isoTxt$evTxt",
-                        color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
-                    )
-                    val afLocked = readout.afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
-                        readout.afState == CaptureResult.CONTROL_AF_STATE_PASSIVE_FOCUSED
-                    Text(
-                        "${settings.focusMode.label}  ${distanceLabel(readout.focusDiopters, calibrated)}" +
-                            if (!mfActive && afLocked) "  ●" else "",
-                        color = Amber.copy(alpha = 0.85f), fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
-                    )
-                    if (showMismatch && mismatch != null) {
-                        Text(
-                            "⚠ ignoré par le téléphone : $mismatch",
-                            color = Warn, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                }
-
-                // Demi-format : quelle vue, et la première en vignette
-                if (format == PhotoFormat.HALF_FRAME) {
-                    val first = pendingHalf
-                    val thumb: androidx.compose.ui.graphics.ImageBitmap? by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, first) {
-                        value = first?.let {
-                            withContext(Dispatchers.IO) {
-                                android.graphics.BitmapFactory.decodeFile(it.absolutePath, android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap()
-                            }
-                        }
-                    }
-                    Column(
-                        Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 52.dp),
-                    ) {
-                        Pill(if (first == null) "VUE 1/2" else "VUE 2/2", true) {}
-                        thumb?.let {
-                            androidx.compose.foundation.Image(
-                                it, contentDescription = "Première vue",
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier
-                                    .padding(top = 6.dp)
-                                    .size(48.dp, 64.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .border(BorderStroke(1.dp, Amber), RoundedCornerShape(4.dp)),
-                            )
-                        }
-                    }
-                }
-
-                // Photomaton : compte à rebours géant
-                if (format == PhotoFormat.PHOTOBOOTH && boothPose > 0) {
-                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            if (countdown > 0) countdown.toString() else "★",
-                            color = Color.White, fontSize = 96.sp, fontWeight = FontWeight.Bold,
-                        )
-                        Text("POSE $boothPose / ${PhotoFormat.PHOTOBOOTH.shots}", color = Amber, fontSize = 14.sp, letterSpacing = 3.sp)
-                    }
-                }
-
-                // Flash blanc au déclenchement
-                Box(Modifier.fillMaxSize().alpha(flash.value).background(Color.White))
-            }
-        }
-
-        if (editing) {
-            // ================= Éditeur de recette (aperçu en direct au-dessus) =================
-            RecipeEditor(
-                recipe = recipe,
-                modified = modified,
-                onChange = { recipe = it },
-                onSave = { saveRecipe() },
-                onDuplicate = { duplicateRecipe() },
-                onReset = { recipe = saved },
-                onDelete = if (!recipe.builtIn && customRecipes.any { it.id == recipe.id }) {
-                    { deleteRecipe() }
-                } else {
-                    null
-                },
-                onClose = { editing = false },
-                modifier = Modifier.fillMaxWidth().height(400.dp),
-                baseFilter = { allowedBase(it) },
-            )
-        } else {
-            // ================= Bande de réglages =================
-            val strip = listOf(
-                Tab.Recipe to (recipe.name + if (modified) " •" else ""),
-                Tab.Format to format.short,
-                Tab.Text to if (inscription.active) inscription.mode.label.uppercase() else "—",
-                Tab.Lens to (lensSel?.label ?: "1×"),
-                Tab.Speed to if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO",
-                Tab.Iso to if (settings.manual) settings.iso.toString() else "AUTO",
-                Tab.Ev to if (settings.manual) "—" else evLabel(settings.evIndex, evStep),
-                Tab.Wb to if (recipe.wb == WhiteBalance.KELVIN) "${recipe.kelvin}K" else "AUTO",
-                Tab.Focus to settings.focusMode.label,
-            )
-            LazyRow(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items(strip, key = { it.first.name }) { (t, value) ->
-                    val selected = t == tab
-                    Column(
-                        Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (selected) Amber.copy(alpha = 0.14f) else Card)
-                            .border(
-                                BorderStroke(1.dp, if (selected) Amber else Color.White.copy(alpha = 0.08f)),
-                                RoundedCornerShape(10.dp),
-                            )
-                            .clickable {
-                                tab = t
-                                if ((t == Tab.Speed || t == Tab.Iso) && !settings.manual) enterManual()
-                            }
-                            .padding(horizontal = 12.dp, vertical = 5.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(t.label, color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, letterSpacing = 1.sp)
-                        Text(
-                            value, color = if (selected) Amber else Color.White,
-                            fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
-                        )
-                    }
-                }
-            }
-
-            // ================= Sélecteur (hauteur fixe pour ne pas redimensionner le viseur) =================
+    // Sélecteur d'un réglage (molette, liste...) : affiché dans le tiroir sous la case touchée
+    val dialArea: @Composable (Tab) -> Unit = { t ->
             Box(Modifier.fillMaxWidth().height(84.dp).padding(top = 4.dp), contentAlignment = Alignment.CenterStart) {
                 val k = caps
-                when (tab) {
+                when (t) {
                     Tab.Recipe -> LazyRow(
                         contentPadding = PaddingValues(horizontal = 12.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1050,50 +787,379 @@ fun CameraScreen(
                     }
                 }
             }
+    }
 
-            // ================= Commandes : dernière photo | déclencheur | A/M =================
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+    Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Ink)) {
+        // ================= Viseur =================
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp), contentAlignment = Alignment.Center) {
+            val w = minOf(maxWidth - 20.dp, maxHeight * 0.75f)
+            Box(
+                Modifier
+                    .size(w, w * 4f / 3f)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color.Black),
             ) {
-                Box(
-                    Modifier
-                        .size(54.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .border(BorderStroke(1.5.dp, Color.White.copy(alpha = 0.25f)), RoundedCornerShape(14.dp))
-                        .clickable { onOpenGallery() },
-                ) {
-                    if (lastPhoto != null) {
-                        PhotoThumb(lastPhoto, 200, Modifier.fillMaxSize())
+                AndroidView(
+                    factory = { previewView },
+                    modifier = Modifier.fillMaxSize(),
+                    update = {
+                        it.setRender(
+                            renderParams,
+                            peaking && mfActive,
+                            if (loupe && mfActive) 3f else 1f,
+                            loupeCenter.x, loupeCenter.y,
+                            format.frame?.shaderFrame ?: FilmProgram.FULL_FRAME,
+                        )
+                    },
+                )
+                val viewEdge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
+                format.frame?.let { FrameViewfinderMask(it, viewEdge, Modifier.fillMaxSize()) } ?: ViewfinderFrame()
+
+                // Date / petit mot, dessinés avec le même code que sur la photo finale
+                if (inscription.active) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        drawIntoCanvas { c ->
+                            val fr = format.frame
+                            if (fr is PaperFrame) {
+                                val p = fr.printRect(size.width, size.height)
+                                Imprint.drawCaption(c.nativeCanvas, fr, p.left, p.top, p.width(), inscription)
+                            } else if (fr != null) {
+                                val h = fr.holeRect(size.width, size.height)
+                                Imprint.drawStamp(c.nativeCanvas, h.left, h.top, h.width(), h.height(), inscription)
+                            } else {
+                                Imprint.drawStamp(c.nativeCanvas, 0f, 0f, size.width, size.height, inscription)
+                            }
+                        }
                     }
                 }
 
-                ShutterButton(busy = busy, onClick = { takePhoto() })
-
-                // Dial A / M
+                // Toucher = mise au point à cet endroit
                 Box(
                     Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(if (settings.manual) Amber.copy(alpha = 0.18f) else Card)
-                        .border(
-                            BorderStroke(1.5.dp, if (settings.manual) Amber else Color.White.copy(alpha = 0.15f)),
-                            CircleShape,
-                        )
-                        .clickable {
-                            if (settings.manual) settings = settings.copy(manual = false) else enterManual()
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures { pos -> onViewfinderTap(pos, size.width, size.height) }
                         },
-                    contentAlignment = Alignment.Center,
+                )
+
+                // Cadre de mise au point
+                focusPoint?.let { p ->
+                    val color = when (focusState) {
+                        FocusUi.Locked -> Amber
+                        FocusUi.Failed -> Warn
+                        FocusUi.Manual -> Color.White.copy(alpha = 0.6f)
+                        else -> Color.White
+                    }
+                    Canvas(Modifier.fillMaxSize()) {
+                        val half = 34.dp.toPx() * reticleScale.value
+                        val len = 11.dp.toPx()
+                        val sw = 2.dp.toPx()
+                        fun seg(a: Offset, b: Offset) = drawLine(color, a, b, strokeWidth = sw, cap = StrokeCap.Round)
+                        val l = p.x - half
+                        val r = p.x + half
+                        val t = p.y - half
+                        val b = p.y + half
+                        seg(Offset(l, t), Offset(l + len, t)); seg(Offset(l, t), Offset(l, t + len))
+                        seg(Offset(r, t), Offset(r - len, t)); seg(Offset(r, t), Offset(r, t + len))
+                        seg(Offset(l, b), Offset(l + len, b)); seg(Offset(l, b), Offset(l, b - len))
+                        seg(Offset(r, b), Offset(r - len, b)); seg(Offset(r, b), Offset(r, b - len))
+                        drawCircle(color, 2.dp.toPx(), p)
+                    }
+                    if (focusState == FocusUi.Locked && settings.focusMode == FocusMode.AFS) {
+                        Text(
+                            "AF-L",
+                            color = Amber, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.offset {
+                                IntOffset((p.x - 16.dp.toPx()).roundToInt(), (p.y + 40.dp.toPx()).roundToInt())
+                            },
+                        )
+                    }
+                }
+
+                // En haut : nom, compteur de poses, éditeur de recette
+                Row(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .fillMaxWidth()
+                        .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)))
+                        .padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (settings.manual) "M" else "A",
-                        color = if (settings.manual) Amber else Color.White,
-                        fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                        if (loupe && mfActive) "LOUPE ×3" else "ARGENTICAM",
+                        color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    // Jetable : la pastille du flash (le vrai flash du téléphone)
+                    if ((format == PhotoFormat.DISPOSABLE || format == PhotoFormat.PHOTOBOOTH) &&
+                        camera?.cameraInfo?.hasFlashUnit() == true
+                    ) {
+                        Pill("⚡ FLASH", flashOn, Modifier.padding(end = 8.dp)) { flashOn = !flashOn }
+                    }
+                    Text(
+                        RollCounter.label(shots),
+                        color = Amber, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF1E1A12).copy(alpha = 0.85f))
+                            .border(BorderStroke(1.dp, Amber.copy(alpha = 0.35f)), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).clickable { editing = !editing },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Edit, contentDescription = "Modifier la recette",
+                            tint = if (editing) Amber else Color.White, modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+
+                // En bas : ce que le capteur fait réellement, comme l'écran d'un Fuji
+                Column(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))))
+                        .padding(start = 18.dp, end = 18.dp, top = 28.dp, bottom = 12.dp),
+                ) {
+                    val shutterTxt = readout.exposureNs?.let { shutterLabel(it) }
+                        ?: if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO"
+                    val isoTxt = readout.iso?.toString() ?: if (settings.manual) settings.iso.toString() else "AUTO"
+                    val evTxt = if (!settings.manual && settings.evIndex != 0) "  EV ${evLabel(settings.evIndex, evStep)}" else ""
+                    Text(
+                        "${if (settings.manual) "M" else "A"}  $shutterTxt  ISO $isoTxt$evTxt",
+                        color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
+                    )
+                    val afLocked = readout.afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
+                        readout.afState == CaptureResult.CONTROL_AF_STATE_PASSIVE_FOCUSED
+                    Text(
+                        "${settings.focusMode.label}  ${distanceLabel(readout.focusDiopters, calibrated)}" +
+                            if (!mfActive && afLocked) "  ●" else "",
+                        color = Amber.copy(alpha = 0.85f), fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
+                    )
+                    if (showMismatch && mismatch != null) {
+                        Text(
+                            "⚠ ignoré par le téléphone : $mismatch",
+                            color = Warn, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                }
+
+                // Demi-format : quelle vue, et la première en vignette
+                if (format == PhotoFormat.HALF_FRAME) {
+                    val first = pendingHalf
+                    val thumb: androidx.compose.ui.graphics.ImageBitmap? by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, first) {
+                        value = first?.let {
+                            withContext(Dispatchers.IO) {
+                                android.graphics.BitmapFactory.decodeFile(it.absolutePath, android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap()
+                            }
+                        }
+                    }
+                    Column(
+                        Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 52.dp),
+                    ) {
+                        Pill(if (first == null) "VUE 1/2" else "VUE 2/2", true) {}
+                        thumb?.let {
+                            androidx.compose.foundation.Image(
+                                it, contentDescription = "Première vue",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier
+                                    .padding(top = 6.dp)
+                                    .size(48.dp, 64.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .border(BorderStroke(1.dp, Amber), RoundedCornerShape(4.dp)),
+                            )
+                        }
+                    }
+                }
+
+                // Photomaton : compte à rebours géant
+                if (format == PhotoFormat.PHOTOBOOTH && boothPose > 0) {
+                    Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            if (countdown > 0) countdown.toString() else "★",
+                            color = Color.White, fontSize = 96.sp, fontWeight = FontWeight.Bold,
+                        )
+                        Text("POSE $boothPose / ${PhotoFormat.PHOTOBOOTH.shots}", color = Amber, fontSize = 14.sp, letterSpacing = 3.sp)
+                    }
+                }
+
+                // Flash blanc au déclenchement
+                Box(Modifier.fillMaxSize().alpha(flash.value).background(Color.White))
+            }
+        }
+
+        if (editing) {
+            // ================= Éditeur de recette (aperçu en direct au-dessus) =================
+            RecipeEditor(
+                recipe = recipe,
+                modified = modified,
+                onChange = { recipe = it },
+                onSave = { saveRecipe() },
+                onDuplicate = { duplicateRecipe() },
+                onReset = { recipe = saved },
+                onDelete = if (!recipe.builtIn && customRecipes.any { it.id == recipe.id }) {
+                    { deleteRecipe() }
+                } else {
+                    null
+                },
+                onClose = { editing = false },
+                modifier = Modifier.fillMaxWidth().height(400.dp),
+                baseFilter = { allowedBase(it) },
+            )
+        } else {
+            // ================= Minimal : pellicule, commandes, tiroir =================
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    // glisser vers le haut ouvre le tiroir des réglages
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures { _, dy -> if (dy < -12f) sheet = Sheet.Settings }
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // Pellicule en cours : toucher ouvre la bibliothèque
+                Row(
+                    Modifier
+                        .padding(top = 12.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(Card)
+                        .border(BorderStroke(1.5.dp, filmAccent(recipe.baseId)), RoundedCornerShape(999.dp))
+                        .clickable { sheet = Sheet.Library }
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(9.dp).clip(CircleShape).background(filmAccent(recipe.baseId)))
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        recipe.name + if (modified) " •" else "",
+                        color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("▾", color = Color.White.copy(alpha = 0.55f), fontSize = 14.sp)
+                }
+
+                // Commandes : dernière photo | déclencheur | réglages
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Box(
+                        Modifier
+                            .size(54.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .border(BorderStroke(1.5.dp, Color.White.copy(alpha = 0.25f)), RoundedCornerShape(14.dp))
+                            .clickable { onOpenGallery() },
+                    ) {
+                        if (lastPhoto != null) {
+                            PhotoThumb(lastPhoto, 200, Modifier.fillMaxSize())
+                        }
+                    }
+
+                    ShutterButton(busy = busy, onClick = { takePhoto() })
+
+                    SlidersButton(active = sheet == Sheet.Settings) {
+                        sheet = if (sheet == Sheet.Settings) null else Sheet.Settings
+                    }
+                }
+
+                // Poignée du tiroir
+                Column(
+                    Modifier.clickable { sheet = Sheet.Settings }.padding(bottom = 8.dp, top = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(Modifier.size(38.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.25f)))
+                    Text(
+                        "GLISSER POUR LES RÉGLAGES",
+                        color = Color.White.copy(alpha = 0.45f), fontSize = 9.sp, letterSpacing = 2.sp,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
             }
         }
+    }
+
+    // ================= Tiroir des réglages / bibliothèque des recettes =================
+    if (sheet != null) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { sheet = null },
+        )
+    }
+    if (sheet == Sheet.Settings) {
+        BottomSheet(Modifier.align(Alignment.BottomCenter), onClose = { sheet = null }) {
+            fun pick(t: Tab) {
+                tab = if (tab == t) Tab.Recipe else t
+                if ((t == Tab.Speed || t == Tab.Iso) && !settings.manual) enterManual()
+            }
+
+            SheetSection("EXPOSITION")
+            TileRow {
+                SheetTile("MODE", if (settings.manual) "M" else "A", settings.manual) {
+                    if (settings.manual) settings = settings.copy(manual = false) else enterManual()
+                }
+                SheetTile("VITESSE", if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO", tab == Tab.Speed) { pick(Tab.Speed) }
+                SheetTile("ISO", if (settings.manual) settings.iso.toString() else "AUTO", tab == Tab.Iso) { pick(Tab.Iso) }
+                SheetTile("EV", if (settings.manual) "—" else evLabel(settings.evIndex, evStep), tab == Tab.Ev) { pick(Tab.Ev) }
+            }
+            if (tab == Tab.Speed || tab == Tab.Iso || tab == Tab.Ev) dialArea(tab)
+
+            SheetSection("MISE AU POINT · OBJECTIF")
+            TileRow {
+                SheetTile("FOCUS", settings.focusMode.label, tab == Tab.Focus) { pick(Tab.Focus) }
+                SheetTile("OBJECTIF", lensSel?.label ?: "1×", tab == Tab.Lens) { pick(Tab.Lens) }
+            }
+            if (tab == Tab.Focus || tab == Tab.Lens) dialArea(tab)
+
+            SheetSection("TIRAGE")
+            TileRow {
+                SheetTile("FORMAT", format.short, tab == Tab.Format) { pick(Tab.Format) }
+                SheetTile("TEXTE", if (inscription.active) inscription.mode.label else "—", tab == Tab.Text) { pick(Tab.Text) }
+            }
+            if (tab == Tab.Format || tab == Tab.Text) dialArea(tab)
+
+            SheetSection("IMAGE")
+            TileRow {
+                SheetTile("BLANCS", if (recipe.wb == WhiteBalance.KELVIN) "${recipe.kelvin}K" else "AUTO", tab == Tab.Wb) { pick(Tab.Wb) }
+                SheetTile("RECETTE", "Éditer", false) {
+                    sheet = null
+                    editing = true
+                }
+            }
+            if (tab == Tab.Wb) dialArea(tab)
+        }
+    }
+    if (sheet == Sheet.Library) {
+        RecipeLibrary(
+            modifier = Modifier.align(Alignment.BottomCenter),
+            recipes = (customRecipes + Recipes.builtIns).filter { allowedBase(it.base()) },
+            selectedId = saved.id,
+            onPick = { r ->
+                if (r.id == saved.id) {
+                    sheet = null
+                    editing = true
+                } else {
+                    selectRecipe(r)
+                    sheet = null
+                }
+            },
+            onEdit = {
+                sheet = null
+                editing = true
+            },
+            onNew = {
+                duplicateRecipe()
+                sheet = null
+                editing = true
+            },
+            onClose = { sheet = null },
+        )
     }
 
     // Saisie du petit mot (clavier Android)
@@ -1130,6 +1196,162 @@ fun CameraScreen(
 
     // Tirage Polaroid qui se développe après la prise de vue
     developing?.let { (uri, frame) -> PrintDeveloping(uri, frame) { developing = null } }
+    }
+}
+
+/** Feuille qui monte du bas de l'écran (tiroir des réglages, bibliothèque). Glisser vers le bas ferme. */
+@Composable
+private fun BottomSheet(
+    modifier: Modifier = Modifier,
+    onClose: () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .heightIn(max = 600.dp)
+            .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+            .background(Color(0xFF121212))
+            .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .pointerInput(Unit) { detectVerticalDragGestures { _, dy -> if (dy > 14f) onClose() } }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(38.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.25f)))
+        }
+        Column(
+            Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(start = 14.dp, end = 14.dp, bottom = 22.dp),
+            content = content,
+        )
+    }
+}
+
+@Composable
+private fun SheetSection(title: String) {
+    Text(
+        title,
+        color = Color(0xFFC9A86A), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
+        modifier = Modifier.padding(top = 14.dp, bottom = 8.dp, start = 2.dp),
+    )
+}
+
+@Composable
+private fun TileRow(content: @Composable RowScope.() -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), content = content)
+}
+
+/** Case d'un réglage : nom en petit, valeur en gros. Ambre quand sa molette est ouverte. */
+@Composable
+private fun RowScope.SheetTile(label: String, value: String, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Amber.copy(alpha = 0.16f) else Color(0xFF1A1A1A))
+            .border(BorderStroke(1.dp, if (selected) Amber else Color.White.copy(alpha = 0.08f)), RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(vertical = 9.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(label, color = if (selected) Amber else Color.White.copy(alpha = 0.55f), fontSize = 9.sp, letterSpacing = 1.sp, maxLines = 1)
+        Text(
+            value, color = if (selected) Amber else Color.White,
+            fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        )
+    }
+}
+
+/** Bouton "réglages" (deux curseurs). */
+@Composable
+private fun SlidersButton(active: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(54.dp)
+            .clip(CircleShape)
+            .background(if (active) Amber.copy(alpha = 0.18f) else Card)
+            .border(BorderStroke(1.dp, if (active) Amber else Color.White.copy(alpha = 0.15f)), CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        val c = if (active) Amber else Color.White
+        Canvas(Modifier.size(22.dp)) {
+            val w = size.width
+            val sw = 2.dp.toPx()
+            drawLine(c, Offset(0f, w * 0.3f), Offset(w, w * 0.3f), strokeWidth = sw, cap = StrokeCap.Round)
+            drawLine(c, Offset(0f, w * 0.72f), Offset(w, w * 0.72f), strokeWidth = sw, cap = StrokeCap.Round)
+            drawCircle(Card, w * 0.13f, Offset(w * 0.66f, w * 0.3f))
+            drawCircle(c, w * 0.13f, Offset(w * 0.66f, w * 0.3f), style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
+            drawCircle(Card, w * 0.13f, Offset(w * 0.36f, w * 0.72f))
+            drawCircle(c, w * 0.13f, Offset(w * 0.36f, w * 0.72f), style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
+        }
+    }
+}
+
+/** Bibliothèque des recettes, rangées par catégorie. */
+@Composable
+private fun RecipeLibrary(
+    modifier: Modifier,
+    recipes: List<Recipe>,
+    selectedId: String,
+    onPick: (Recipe) -> Unit,
+    onEdit: () -> Unit,
+    onNew: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val grouped = recipes.groupBy { recipeCategory(it) }.toList().sortedBy { RecipeCategoryOrder.indexOf(it.first) }
+    BottomSheet(modifier, onClose) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("PELLICULES", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp, modifier = Modifier.weight(1f))
+            ActionCard("✎", "Éditer", onEdit)
+            ActionCard("+", "Nouvelle", onNew)
+        }
+        grouped.forEach { (cat, list) ->
+            SheetSection(cat)
+            list.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    pair.forEach { r ->
+                        val selected = r.id == selectedId
+                        val accent = filmAccent(r.baseId)
+                        Row(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color(0xFF1A1A1A))
+                                .border(
+                                    BorderStroke(1.5.dp, if (selected) accent else Color.White.copy(alpha = 0.08f)),
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .clickable { onPick(r) }
+                                .padding(horizontal = 10.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    (if (!r.builtIn) "★ " else "") + r.name,
+                                    color = if (selected) accent else Color.White,
+                                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                                )
+                                val base = r.base()
+                                Text(
+                                    if (r.builtIn && r.id == "base_${base.id}") base.subtitle else "base ${base.name}",
+                                    color = Color.White.copy(alpha = 0.45f), fontSize = 10.sp, maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+        }
     }
 }
 

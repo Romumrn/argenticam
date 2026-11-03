@@ -39,7 +39,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 |---|---|
 | `MainActivity.kt` | Permission caméra, init `LutCache`, lance `ArgentiApp` |
 | `ArgentiApp.kt` | Navigation caméra / grille / visionneuse, compteur de poses |
-| `CameraScreen.kt` | Écran caméra : liaison CameraX, viseur, mise au point au toucher, bande de réglages, molettes, éditeur |
+| `CameraScreen.kt` | Écran caméra, interface minimale : viseur, pastille de pellicule, déclencheur ; tiroir des réglages (`Sheet.Settings`, cases + `dialArea` = molettes/listes) et bibliothèque des recettes (`Sheet.Library`) ; mise au point au toucher, prises de vue (coroutines) |
 | `Manual.kt` | Réglages de prise de vue, capacités du capteur (`CameraCaps`), envoi Camera2 (`applyManual`), lecture réelle (`LiveReadout`), objectifs |
 | `Recipe.kt` | Modèle `Recipe` (recette Fuji), `RenderParams` (uniforms du shader), recettes intégrées, sauvegarde JSON (`RecipeStore`) |
 | `RecipeEditor.kt` | Éditeur de recettes (aperçu en direct) |

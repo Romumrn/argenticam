@@ -21,6 +21,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
   - En plus : vignettage, halation, intensité du film
 
 **Prise de vue**
+- **Interface minimale** : grand viseur, la pellicule en cours (toucher = bibliothèque des recettes par catégorie) et le déclencheur. Les réglages sont dans un **tiroir** (glisser vers le haut) rangé en Exposition, Mise au point · Objectif, Tirage et Image ; toucher une case ouvre sa molette juste en dessous
 - Aperçu en direct avec la recette appliquée (shader OpenGL), photo développée avec exactement le même shader
 - **Mise au point au doigt** : touche le viseur pour faire le point à cet endroit, en **AF-S** (point verrouillé, « AF-L ») ou **AF-C** (suivi continu)
 - **MF** : bague de mise au point graduée en distance, **loupe ×3** pendant qu'on tourne la bague, **focus peaking**
