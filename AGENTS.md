@@ -26,6 +26,12 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 - La CI (`.github/workflows/build.yml`) compile à chaque push et publie l'APK dans la release
   GitHub `latest` (`ArgentiCam.apk`) quand on pousse sur `main`.
 - Maven Central peut répondre 429 (limite de débit) : relancer la commande suffit.
+- **Version** : `versionCode` = numéro du run GitHub Actions (`GITHUB_RUN_NUMBER`), nombre de commits en local ;
+  `versionName` = `0.<versionCode>`. Ne pas remettre de version en dur.
+- **Signature** : clé fixe fournie par `ARGENTICAM_KEYSTORE` / `ARGENTICAM_KEYSTORE_PASSWORD` (alias `argenticam`),
+  décodée en CI depuis les secrets `KEYSTORE_BASE64` / `KEYSTORE_PASSWORD`. **Jamais** de clé ni de mot de passe
+  dans le dépôt. Ne pas changer de clé : une autre clé empêche la mise à jour de l'appli installée.
+- La release `latest` est supprimée puis recréée à chaque build de `main` (un seul fichier : `ArgentiCam.apk`).
 
 ## Architecture (`app/src/main/java/com/filmcam/`)
 
@@ -46,6 +52,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `RetroDial.kt` | La molette rétro (crans, vibration, inertie) |
 | `Polaroid.kt` | Mode Polaroid : géométrie (Polaroid 600), recadrage carré, cadre papier, masque du viseur, développement animé |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée, MediaStore, compteur de rouleau |
+| `Inscription.kt` | Date / petit mot imprimés (dos dateur orange, légende manuscrite Polaroid), même code pour le viseur et la photo |
 | `ZoomableImage.kt` | Image zoomable de la visionneuse (pincement, déplacement, double-tap ; ne consomme pas le swipe du pager à ×1) |
 
 ### Chaîne de rendu

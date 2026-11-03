@@ -52,7 +52,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -73,6 +76,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -100,7 +105,7 @@ private val Card = Color(0xFF161616)
 private val Warn = Color(0xFFFF6B5B)
 
 private enum class Tab(val label: String) {
-    Recipe("RECETTE"), Format("FORMAT"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
+    Recipe("RECETTE"), Format("FORMAT"), Text("TEXTE"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
 }
 
 private enum class FocusUi { Idle, Searching, Locked, Failed, Manual }
@@ -182,6 +187,13 @@ fun CameraScreen(
     var tab by remember { mutableStateOf(Tab.Recipe) }
     var polaroid by remember { mutableStateOf(false) }
     var developing by remember { mutableStateOf<android.net.Uri?>(null) }
+    var inscription by remember { mutableStateOf(InscriptionStore.load(context)) }
+    var typingNote by remember { mutableStateOf(false) }
+
+    fun setInscription(i: Inscription) {
+        inscription = i
+        InscriptionStore.save(context, i)
+    }
 
     // ---------- Mise au point au doigt ----------
     var focusPoint by remember { mutableStateOf<Offset?>(null) }
@@ -400,12 +412,13 @@ fun CameraScreen(
         val params = renderParams
         val name = recipe.name
         val asPolaroid = polaroid
+        val note = inscription
         imageCapture.takePicture(
             workExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     try {
-                        val uri = PhotoPipeline.develop(context, image, params, name, asPolaroid)
+                        val uri = PhotoPipeline.develop(context, image, params, name, asPolaroid, note)
                         mainExecutor.execute {
                             currentOnSaved()
                             if (asPolaroid) developing = uri
@@ -458,6 +471,20 @@ fun CameraScreen(
                     },
                 )
                 if (polaroid) PolaroidViewfinderMask(Modifier.fillMaxSize()) else ViewfinderFrame()
+
+                // Date / petit mot, dessinés avec le même code que sur la photo finale
+                if (inscription.active) {
+                    Canvas(Modifier.fillMaxSize()) {
+                        drawIntoCanvas { c ->
+                            if (polaroid) {
+                                val p = Polaroid.printRect(size.width, size.height)
+                                Imprint.drawPolaroidCaption(c.nativeCanvas, p.left, p.top, p.width(), inscription)
+                            } else {
+                                Imprint.drawStamp(c.nativeCanvas, 0f, 0f, size.width, size.height, inscription)
+                            }
+                        }
+                    }
+                }
 
                 // Toucher = mise au point à cet endroit
                 Box(
@@ -603,6 +630,7 @@ fun CameraScreen(
             val strip = listOf(
                 Tab.Recipe to (recipe.name + if (modified) " •" else ""),
                 Tab.Format to if (polaroid) "POLAROID" else "3:4",
+                Tab.Text to if (inscription.active) inscription.mode.label.uppercase() else "—",
                 Tab.Lens to (lensSel?.label ?: "1×"),
                 Tab.Speed to if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO",
                 Tab.Iso to if (settings.manual) settings.iso.toString() else "AUTO",
@@ -690,6 +718,25 @@ fun CameraScreen(
                                         color = Color.White.copy(alpha = 0.45f), fontSize = 10.sp, maxLines = 1,
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    Tab.Text -> LazyRow(
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        items(InscriptionMode.entries) { m ->
+                            Chip(m.label, inscription.mode == m) {
+                                setInscription(inscription.copy(mode = m))
+                                // un mot à écrire et rien d'écrit : on ouvre le clavier
+                                if (m.hasText && inscription.text.isBlank()) typingNote = true
+                            }
+                        }
+                        item {
+                            ActionCard("✎", if (inscription.text.isBlank()) "Écrire" else "« ${inscription.text.take(12)} »") {
+                                typingNote = true
                             }
                         }
                     }
@@ -902,6 +949,38 @@ fun CameraScreen(
                 }
             }
         }
+    }
+
+    // Saisie du petit mot (clavier Android)
+    if (typingNote) {
+        var draft by remember { mutableStateOf(inscription.text) }
+        AlertDialog(
+            onDismissRequest = { typingNote = false },
+            title = { Text(if (polaroid) "Écrire sur le Polaroid" else "Texte imprimé sur la photo") },
+            text = {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it.take(Imprint.MAX_TEXT) },
+                    singleLine = true,
+                    placeholder = { Text("Paris, été 2026") },
+                    supportingText = { Text("${draft.length}/${Imprint.MAX_TEXT}") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val mode = when {
+                        draft.isBlank() && inscription.mode == InscriptionMode.TEXT -> InscriptionMode.NONE
+                        draft.isBlank() && inscription.mode == InscriptionMode.BOTH -> InscriptionMode.DATE
+                        draft.isNotBlank() && inscription.mode == InscriptionMode.NONE -> InscriptionMode.TEXT
+                        draft.isNotBlank() && inscription.mode == InscriptionMode.DATE -> InscriptionMode.BOTH
+                        else -> inscription.mode
+                    }
+                    setInscription(Inscription(mode, draft.trim()))
+                    typingNote = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { typingNote = false }) { Text("Annuler") } },
+        )
     }
 
     // Tirage Polaroid qui se développe après la prise de vue

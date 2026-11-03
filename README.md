@@ -26,6 +26,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - **Lecture réelle du capteur** : l'écran affiche la vitesse, l'ISO et la distance de mise au point que le téléphone applique *vraiment*, et prévient s'il ignore un réglage manuel
 - Choix de l'**objectif** (ultra grand-angle, principal, télé) selon ce que le téléphone expose
 - **Mode Polaroid** : cadre Polaroid 600 dans le viseur (le carré visé = la photo), tirage carré posé sur un cadre papier crème aux vraies proportions (88 × 107 mm), et **développement animé** après la prise de vue. En mode Polaroid, seules les recettes sur pellicule instantanée sont proposées
+- **Date et petit mot** imprimés sur la photo : date orange lumineuse façon compact argentique (`'26 11 03`) sur les photos normales, légende manuscrite au feutre sur le bord du Polaroid ; le texte se tape au clavier, l'aperçu est visible dans le viseur
 - Compteur de poses façon rouleau de **36 vues**, **galerie intégrée** (grille, visionneuse avec **zoom** au pincement et au double-tap, partage, suppression)
 - **Qualité maximale** : capture à la plus haute résolution que le téléphone autorise (50 Mpx et plus selon le capteur), développement par tuiles sans perte de résolution, JPEG qualité 100, métadonnées EXIF conservées (date, appareil, vitesse, ISO, focale ; la recette est notée dans la description)
 - Photos enregistrées dans `Pictures/ArgentiCam`
@@ -46,7 +47,9 @@ Les noms de pellicules et de simulations sont des marques de leurs propriétaire
 2. Télécharge `ArgentiCam.apk` depuis ton téléphone.
 3. Ouvre-le et autorise l'installation depuis des sources inconnues si Android le demande.
 
-L'APK est un build de debug, signé avec la clé de debug. Il demande Android 10 ou plus (API 29).
+Chaque build a un numéro de version qui augmente (affiché dans la galerie). Si les secrets `KEYSTORE_BASE64` et `KEYSTORE_PASSWORD` sont définis dans le dépôt, l'APK est toujours signé avec la même clé et les nouvelles versions s'installent par-dessus l'ancienne. Android 10 ou plus (API 29).
+
+Les archives « Source code » de la release sont ajoutées automatiquement par GitHub et ne peuvent pas être retirées : seul `ArgentiCam.apk` est utile.
 
 Pour les agents de code (et les contributeurs) : voir [`AGENTS.md`](AGENTS.md).
 

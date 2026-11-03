@@ -4,6 +4,16 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Numéro de build qui augmente tout seul : numéro du run GitHub Actions en CI,
+// nombre de commits en local. Android exige un versionCode croissant pour mettre à jour.
+val gitCommitCount: Int = try {
+    providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
+        .standardOutput.asText.get().trim().toInt()
+} catch (e: Exception) {
+    1
+}
+val buildNumber: Int = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: gitCommitCount
+
 android {
     namespace = "com.filmcam"
     compileSdk = 34
@@ -12,13 +22,35 @@ android {
         applicationId = "com.argenticam"
         minSdk = 29
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = buildNumber
+        versionName = "0.$buildNumber"
+    }
+
+    // Clé de signature fixe : sans elle, chaque build GitHub signe avec une clé de debug différente
+    // et Android refuse la mise à jour ("conflit avec le paquet"). La clé n'est PAS dans le dépôt :
+    // elle est fournie par les variables d'environnement (secrets GitHub en CI). Sans elles, on
+    // garde la clé de debug locale.
+    val keystorePath = System.getenv("ARGENTICAM_KEYSTORE")
+    val keystorePassword = System.getenv("ARGENTICAM_KEYSTORE_PASSWORD")
+    val stableSigning = keystorePath != null && keystorePassword != null && file(keystorePath).exists()
+    signingConfigs {
+        if (stableSigning) {
+            create("argenticam") {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = "argenticam"
+                keyPassword = keystorePassword
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            if (stableSigning) signingConfig = signingConfigs.getByName("argenticam")
+        }
         release {
             isMinifyEnabled = false
+            if (stableSigning) signingConfig = signingConfigs.getByName("argenticam")
         }
     }
     compileOptions {
@@ -30,6 +62,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

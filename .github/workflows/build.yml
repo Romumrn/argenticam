@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# Un seul build à la fois par branche : le plus récent gagne (évite deux releases "latest" en concurrence)
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,6 +23,21 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # Clé de signature fixe depuis les secrets du dépôt (KEYSTORE_BASE64, KEYSTORE_PASSWORD),
+      # pour que chaque version s'installe par-dessus la précédente. Sans secrets : clé de debug.
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/argenticam.keystore"
+            echo "ARGENTICAM_KEYSTORE=$RUNNER_TEMP/argenticam.keystore" >> "$GITHUB_ENV"
+            echo "ARGENTICAM_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "Clé de signature fixe utilisée"
+          else
+            echo "::warning::Pas de secrets KEYSTORE_BASE64 / KEYSTORE_PASSWORD : APK signé avec une clé de debug temporaire"
+          fi
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon
       - name: Rename APK
@@ -27,13 +47,22 @@ jobs:
           name: ArgentiCam-debug-apk
           path: ArgentiCam.apk
 
-      # Sur la branche principale : publie l'APK dans une release "latest" téléchargeable.
+      # Sur la branche principale : on recrée la release "latest" à chaque build
+      # (supprime les anciens fichiers, comme le vieux FilmCam.apk) et on y met le nouvel APK.
+      - name: Remove previous release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete latest --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
       - name: Publish release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: ArgentiCam (dernière version)
-          body: "APK de debug, installable directement sur Android (autoriser les sources inconnues)."
+          name: ArgentiCam 0.${{ github.run_number }}
+          body: |
+            Version 0.${{ github.run_number }} (commit ${{ github.sha }}).
+            Télécharge ArgentiCam.apk depuis le téléphone et installe-le (autoriser les sources inconnues).
+            Les archives « Source code » sont ajoutées automatiquement par GitHub à toute release : inutile de les télécharger.
           files: ArgentiCam.apk
           make_latest: true

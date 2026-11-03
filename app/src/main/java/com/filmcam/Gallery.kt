@@ -82,7 +82,8 @@ fun GalleryGrid(
             Column(Modifier.padding(start = 6.dp)) {
                 Text("Pellicule", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    if (photos.size <= 1) "${photos.size} photo" else "${photos.size} photos",
+                    (if (photos.size <= 1) "${photos.size} photo" else "${photos.size} photos") +
+                        "  ·  ArgentiCam v${BuildConfig.VERSION_NAME}",
                     color = Color.White.copy(alpha = 0.55f), fontSize = 12.sp,
                 )
             }

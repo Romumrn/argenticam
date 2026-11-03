@@ -19,7 +19,14 @@ import java.util.Locale
 object PhotoPipeline {
 
     /** Retourne l'Uri de la photo enregistrée. À appeler hors du thread principal. */
-    fun develop(context: Context, image: ImageProxy, params: RenderParams, name: String, polaroid: Boolean = false): Uri {
+    fun develop(
+        context: Context,
+        image: ImageProxy,
+        params: RenderParams,
+        name: String,
+        polaroid: Boolean = false,
+        inscription: Inscription = Inscription(),
+    ): Uri {
         val rotation = image.imageInfo.rotationDegrees
         val buffer = image.planes[0].buffer
         val bytes = ByteArray(buffer.remaining())
@@ -51,6 +58,7 @@ object PhotoPipeline {
             if (developed !== square) square.recycle()
             bmp = Polaroid.compose(developed)
             developed.recycle()
+            Imprint.drawPolaroidCaption(android.graphics.Canvas(bmp), 0f, 0f, bmp.width.toFloat(), inscription)
             try {
                 return save(context, bmp, "polaroid-$name", exif, name)
             } finally {
@@ -58,8 +66,18 @@ object PhotoPipeline {
             }
         }
 
-        val result = if (params.strength <= 0f) bmp else FilmProcessor.process(bmp, params)
+        var result = if (params.strength <= 0f) bmp else FilmProcessor.process(bmp, params)
         if (result !== bmp) bmp.recycle()
+        if (inscription.active) {
+            if (!result.isMutable) {
+                val copy = result.copy(Bitmap.Config.ARGB_8888, true)
+                result.recycle()
+                result = copy
+            }
+            Imprint.drawStamp(
+                android.graphics.Canvas(result), 0f, 0f, result.width.toFloat(), result.height.toFloat(), inscription,
+            )
+        }
 
         try {
             return save(context, result, name, exif, name)
