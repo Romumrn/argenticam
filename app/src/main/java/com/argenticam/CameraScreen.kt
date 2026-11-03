@@ -1063,6 +1063,13 @@ fun CameraScreen(
                         recipe.name + if (modified) " •" else "",
                         color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1,
                     )
+                    // le format, s'il n'est pas le standard (il se choisit dans la bibliothèque)
+                    if (format != PhotoFormat.STANDARD) {
+                        Text(
+                            "  ·  ${format.short}",
+                            color = Amber, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, maxLines = 1,
+                        )
+                    }
                     Spacer(Modifier.width(8.dp))
                     Text("▾", color = Color.White.copy(alpha = 0.55f), fontSize = 14.sp)
                 }
@@ -1142,15 +1149,14 @@ fun CameraScreen(
             }
             if (tab == Tab.Focus || tab == Tab.Lens) dialArea(tab)
 
-            SheetSection("TIRAGE")
-            TileRow {
-                SheetTile("FORMAT", format.short, tab == Tab.Format) { pick(Tab.Format) }
-                // écrire sur le bord : seulement sur un tirage instantané
-                if (format.canWrite) {
+            // écrire sur le bord : seulement sur un tirage instantané (le format se choisit avec la pellicule)
+            if (format.canWrite) {
+                SheetSection("TIRAGE")
+                TileRow {
                     SheetTile("TEXTE", if (inscription.active) inscription.mode.label else "—", tab == Tab.Text) { pick(Tab.Text) }
                 }
+                if (tab == Tab.Text) dialArea(tab)
             }
-            if (tab == Tab.Format || (tab == Tab.Text && format.canWrite)) dialArea(tab)
 
             SheetSection("IMAGE")
             TileRow {
@@ -1168,6 +1174,9 @@ fun CameraScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
             recipes = customRecipes + Recipes.builtIns,
             selectedId = saved.id,
+            formats = PhotoFormat.entries.filter { it.allows(recipe.base()) },
+            format = format,
+            onFormat = { setFormat(it) },
             onPick = { r ->
                 if (r.id == saved.id) {
                     sheet = null
@@ -1328,6 +1337,9 @@ private fun RecipeLibrary(
     modifier: Modifier,
     recipes: List<Recipe>,
     selectedId: String,
+    formats: List<PhotoFormat>,
+    format: PhotoFormat,
+    onFormat: (PhotoFormat) -> Unit,
     onPick: (Recipe) -> Unit,
     onEdit: () -> Unit,
     onNew: () -> Unit,
@@ -1339,6 +1351,13 @@ private fun RecipeLibrary(
             Text("PELLICULES", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp, modifier = Modifier.weight(1f))
             ActionCard("✎", "Éditer", onEdit)
             ActionCard("+", "Nouvelle", onNew)
+        }
+        // Le format va avec la pellicule : on ne propose que ses variantes (35 mm, 6x6, Go, Spectra...)
+        if (formats.size > 1) {
+            SheetSection("FORMAT")
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(formats) { f -> Chip(f.label, f == format) { onFormat(f) } }
+            }
         }
         grouped.forEach { (cat, list) ->
             SheetSection(cat)
