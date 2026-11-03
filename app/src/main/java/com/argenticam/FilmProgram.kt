@@ -378,10 +378,12 @@ void main() {
         vec2 fu = (vUv - uFrame.xy) / uFrame.zw;
         float fa = uAspect * uFrame.z / uFrame.w;
         vec2 gp = fu * vec2(uGrainCells * fa, uGrainCells) + vec2(uSeed * 7.13, uSeed * 3.71);
-        float n = grainField(gp);
-        vec3 chroma = vec3(grainField(gp + 41.0), grainField(gp + 83.0), grainField(gp + 127.0));
-        // le bruit lissé a moins d'écart que le bruit par case : on compense pour garder la même force
-        c += amp * (vec3(n) * 3.2 + chroma * 1.0 * (1.0 - uBw));
+        // grainField a un écart-type de 0,158 : x 6,3 donne un bruit d'écart-type 1,
+        // donc uGrain = écart-type réel du grain dans les tons moyens (mesuré, cf. Recipe.render)
+        float n = grainField(gp) * 6.3;
+        vec3 chroma = vec3(grainField(gp + 41.0), grainField(gp + 83.0), grainField(gp + 127.0)) * 6.3;
+        // surtout de la luminance, un soupçon de couleur (pellicule couleur)
+        c += amp * (vec3(n) + chroma * 0.3 * (1.0 - uBw));
     }
 
     // Vignettage

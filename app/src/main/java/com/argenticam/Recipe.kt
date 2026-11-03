@@ -100,12 +100,15 @@ fun Recipe.render(): RenderParams {
         gain = floatArrayOf(p.gain[0] * wb[0], p.gain[1] * wb[1], p.gain[2] * wb[2]),
         shadowTint = p.shadowTint,
         highlightTint = p.highlightTint,
+        // Écart-type du grain dans les tons moyens, en fraction de la plage (un vrai scan
+        // de pellicule : ~2 % pour un grain fin, ~4 % pour une pellicule granuleuse).
         grain = when (grain) {
             Level.OFF -> 0f
-            Level.WEAK -> 0.085f
-            Level.STRONG -> 0.17f
+            Level.WEAK -> 0.022f
+            Level.STRONG -> 0.04f
         },
-        grainSize = if (grainLarge) 1.9f else 1.15f,
+        // Taille : ~1600 amas sur la hauteur en "petit" (≈ 2,5 px sur 4000 px), ~950 en "gros".
+        grainSize = if (grainLarge) 1.16f else 0.69f,
         vignette = vignette * 0.12f,
         halation = halation * 0.15f,
         strength = strength / 10f,
