@@ -384,7 +384,7 @@ fun CameraScreen(
     fun setPolaroid(on: Boolean) {
         polaroid = on
         // en passant en Polaroid, on charge une pellicule instantanée (modifiable ensuite)
-        if (on && recipe.baseId != "polaroid600" && recipe.baseId != "sx70") {
+        if (on && !recipe.base().instant) {
             Recipes.builtIns.firstOrNull { it.id == "base_polaroid600" }?.let { selectRecipe(it) }
         }
     }
@@ -596,6 +596,7 @@ fun CameraScreen(
                 },
                 onClose = { editing = false },
                 modifier = Modifier.fillMaxWidth().height(400.dp),
+                instantOnly = polaroid,
             )
         } else {
             // ================= Bande de réglages =================
@@ -658,7 +659,9 @@ fun CameraScreen(
                                 editing = true
                             }
                         }
-                        items(customRecipes + Recipes.builtIns, key = { it.id }) { r ->
+                        // En Polaroid, uniquement les recettes sur pellicule instantanée
+                        val shown = (customRecipes + Recipes.builtIns).filter { !polaroid || it.base().instant }
+                        items(shown, key = { it.id }) { r ->
                             val selected = r.id == saved.id
                             val accent = filmAccent(r.baseId)
                             Row(

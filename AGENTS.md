@@ -79,6 +79,8 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
   (`Polaroid.cropFraction`) viennent de la même géométrie — garder ce lien (ce qu'on voit = ce qu'on obtient).
   Le shader reçoit `uFrame` pour centrer grain et vignettage sur le carré (aperçu) ; la photo est recadrée *avant*
   le shader, donc `FULL_FRAME`.
+- Viseur Polaroid : dessiner le cadre avec des rectangles pleins, **jamais** de `Path` troué en `EvenOdd`
+  (rempli entièrement sur certains Xiaomi). Les pellicules `instant = true` sont les seules proposées en mode Polaroid.
 - **Balance des blancs** : `AUTO` ou `KELVIN`. En Kelvin, le téléphone est calé en lumière du jour
   et le shader convertit vers la température choisie (`kelvinGain` dans `Recipe.kt`).
 - Pas de `AnimatedVisibility` directement dans un `Box` imbriqué dans un `Column` (conflit de

@@ -36,8 +36,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -131,18 +129,23 @@ fun PolaroidViewfinderMask(modifier: Modifier = Modifier) {
     ComposeCanvas(modifier) {
         val p = Polaroid.printRect(size.width, size.height)
         val hole = Polaroid.holeRect(size.width, size.height)
-        val outside = Path().apply {
-            fillType = PathFillType.EvenOdd
-            addRect(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height))
-            addRect(androidx.compose.ui.geometry.Rect(p.left, p.top, p.right, p.bottom))
+        // Uniquement des rectangles pleins autour du carré : pas de forme "trouée" (even-odd),
+        // que certains moteurs de rendu (Xiaomi) remplissent entièrement.
+        fun band(color: Color, l: Float, t: Float, r: Float, b: Float) {
+            if (r > l && b > t) drawRect(color, topLeft = Offset(l, t), size = Size(r - l, b - t))
         }
-        drawPath(outside, Color(0xFF0B0B0B))
-        val paper = Path().apply {
-            fillType = PathFillType.EvenOdd
-            addRect(androidx.compose.ui.geometry.Rect(p.left, p.top, p.right, p.bottom))
-            addRect(androidx.compose.ui.geometry.Rect(hole.left, hole.top, hole.right, hole.bottom))
-        }
-        drawPath(paper, Polaroid.Paper)
+        val ink = Color(0xFF0B0B0B)
+        // noir autour du tirage
+        band(ink, 0f, 0f, size.width, p.top)
+        band(ink, 0f, p.bottom, size.width, size.height)
+        band(ink, 0f, p.top, p.left, p.bottom)
+        band(ink, p.right, p.top, size.width, p.bottom)
+        // papier autour du carré
+        val paper = Polaroid.Paper
+        band(paper, p.left, p.top, p.right, hole.top)
+        band(paper, p.left, hole.bottom, p.right, p.bottom)
+        band(paper, p.left, hole.top, hole.left, hole.bottom)
+        band(paper, hole.right, hole.top, p.right, hole.bottom)
         drawRect(
             Color.Black.copy(alpha = 0.18f),
             topLeft = Offset(hole.left, hole.top),

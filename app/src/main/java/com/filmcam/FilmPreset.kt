@@ -31,6 +31,8 @@ data class FilmPreset(
     val lut: String? = null,
     /** Simulation Fujifilm (affichée à part dans la liste). */
     val fuji: Boolean = false,
+    /** Film instantané : seul proposé en mode Polaroid. */
+    val instant: Boolean = false,
 )
 
 object Presets {
@@ -81,7 +83,7 @@ object Presets {
         ),
         // --- Pellicules ---
         FilmPreset(
-            id = "polaroid600", name = "Polaroid 600", subtitle = "instantané · doux, cyan",
+            id = "polaroid600", name = "Polaroid 600", subtitle = "instantané · doux, cyan", instant = true,
             exposure = 0.12f, contrast = 0.88f, saturation = 0.86f, fade = 0.07f,
             gain = v(1.03f, 1.0f, 0.95f),
             shadowTint = v(-0.012f, 0.02f, 0.03f),
@@ -89,12 +91,43 @@ object Presets {
             grain = 0.06f, grainSize = 1.3f, vignette = 0.32f,
         ),
         FilmPreset(
-            id = "sx70", name = "SX-70", subtitle = "instantané · chaud, délavé",
+            id = "sx70", name = "SX-70", subtitle = "instantané · chaud, délavé", instant = true,
             exposure = 0.15f, contrast = 0.84f, saturation = 0.78f, fade = 0.1f,
             gain = v(1.08f, 1.0f, 0.87f),
             shadowTint = v(0.01f, 0.012f, 0.02f),
             highlightTint = v(0.035f, 0.02f, -0.015f),
             grain = 0.07f, grainSize = 1.4f, vignette = 0.4f,
+        ),
+        FilmPreset(
+            id = "itype", name = "i-Type", subtitle = "instantané · net, plus contrasté", instant = true,
+            exposure = 0.05f, contrast = 0.98f, saturation = 0.95f, fade = 0.05f,
+            gain = v(1.02f, 1.0f, 0.97f),
+            shadowTint = v(-0.008f, 0.012f, 0.022f),
+            highlightTint = v(0.02f, 0.012f, -0.008f),
+            grain = 0.05f, grainSize = 1.2f, vignette = 0.25f,
+        ),
+        FilmPreset(
+            id = "polaroidbw", name = "Polaroid N&B", subtitle = "instantané · noir et blanc doux", instant = true,
+            bw = true, exposure = 0.1f, contrast = 0.92f, fade = 0.08f,
+            shadowTint = v(0.01f, 0.006f, 0.0f),
+            highlightTint = v(0.015f, 0.01f, 0.0f),
+            grain = 0.06f, grainSize = 1.3f, vignette = 0.35f,
+        ),
+        FilmPreset(
+            id = "expired", name = "Polaroid périmé", subtitle = "instantané · dérive magenta, délavé", instant = true,
+            exposure = 0.2f, contrast = 0.8f, saturation = 0.7f, fade = 0.14f,
+            gain = v(1.1f, 0.98f, 0.82f),
+            shadowTint = v(0.03f, -0.01f, 0.04f),
+            highlightTint = v(0.04f, 0.03f, -0.02f),
+            grain = 0.1f, grainSize = 1.5f, vignette = 0.55f,
+        ),
+        FilmPreset(
+            id = "instax", name = "Instax", subtitle = "instantané · net, saturé", instant = true,
+            exposure = 0.05f, contrast = 1.08f, saturation = 1.1f, fade = 0.03f,
+            gain = v(0.99f, 1.0f, 1.02f),
+            shadowTint = v(-0.01f, 0.005f, 0.015f),
+            highlightTint = v(0.01f, 0.01f, 0.0f),
+            grain = 0.04f, grainSize = 1.1f, vignette = 0.2f,
         ),
         FilmPreset(
             id = "portra400", name = "Portra 400", subtitle = "ISO 400 · portrait",
