@@ -43,6 +43,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -861,6 +862,32 @@ fun CameraScreen(
             }
     }
 
+    // Éditeur de recette : sous le viseur en portrait, en panneau pivoté en paysage
+    val editorPanel: @Composable (Modifier) -> Unit = { m ->
+        RecipeEditor(
+            recipe = recipe,
+            modified = modified,
+            onChange = { r ->
+                if (r.baseId != recipe.baseId) {
+                    val f = PhotoFormat.forFilm(r.base(), format)
+                    if (f != format) format = f
+                }
+                recipe = r
+            },
+            onSave = { saveRecipe() },
+            onDuplicate = { duplicateRecipe() },
+            onReset = { recipe = saved },
+            onDelete = if (!recipe.builtIn && customRecipes.any { it.id == recipe.id }) {
+                { deleteRecipe() }
+            } else {
+                null
+            },
+            onClose = { editing = false },
+            modifier = m,
+            baseFilter = { allowedBase(it) },
+        )
+    }
+
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(Ink)) {
         // ================= Viseur =================
@@ -1089,30 +1116,9 @@ fun CameraScreen(
             }
         }
 
-        if (editing) {
+        if (editing && !landscape) {
             // ================= Éditeur de recette (aperçu en direct au-dessus) =================
-            RecipeEditor(
-                recipe = recipe,
-                modified = modified,
-                onChange = { r ->
-                    if (r.baseId != recipe.baseId) {
-                        val f = PhotoFormat.forFilm(r.base(), format)
-                        if (f != format) format = f
-                    }
-                    recipe = r
-                },
-                onSave = { saveRecipe() },
-                onDuplicate = { duplicateRecipe() },
-                onReset = { recipe = saved },
-                onDelete = if (!recipe.builtIn && customRecipes.any { it.id == recipe.id }) {
-                    { deleteRecipe() }
-                } else {
-                    null
-                },
-                onClose = { editing = false },
-                modifier = Modifier.fillMaxWidth().height(400.dp),
-                baseFilter = { allowedBase(it) },
-            )
+            editorPanel(Modifier.fillMaxWidth().height(400.dp))
         } else {
             // ================= Minimal : pellicule, commandes, tiroir =================
             Column(
@@ -1219,97 +1225,115 @@ fun CameraScreen(
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { sheet = null },
         )
     }
-    if (sheet == Sheet.Settings) {
-        BottomSheet(Modifier.align(Alignment.BottomCenter), onClose = { sheet = null }) {
-            fun pick(t: Tab) {
-                tab = if (tab == t) Tab.Recipe else t
-                if ((t == Tab.Speed || t == Tab.Iso) && !settings.manual) enterManual()
-            }
-
-            SheetSection("EXPOSITION")
-            TileRow {
-                SheetTile("MODE", if (settings.manual) "M" else "A", settings.manual) {
-                    if (settings.manual) settings = settings.copy(manual = false) else enterManual()
+    // Les panneaux pivotent avec le téléphone : en paysage, ils montent depuis le bas du photographe
+    Oriented(uiAngle, landscape) {
+        if (sheet == Sheet.Settings) {
+            BottomSheet(Modifier.align(Alignment.BottomCenter), onClose = { sheet = null }) {
+                fun pick(t: Tab) {
+                    tab = if (tab == t) Tab.Recipe else t
+                    if ((t == Tab.Speed || t == Tab.Iso) && !settings.manual) enterManual()
                 }
-                SheetTile("VITESSE", if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO", tab == Tab.Speed) { pick(Tab.Speed) }
-                SheetTile("ISO", if (settings.manual) settings.iso.toString() else "AUTO", tab == Tab.Iso) { pick(Tab.Iso) }
-                SheetTile("EV", if (settings.manual) "—" else evLabel(settings.evIndex, evStep), tab == Tab.Ev) { pick(Tab.Ev) }
-            }
-            if (tab == Tab.Speed || tab == Tab.Iso || tab == Tab.Ev) dialArea(tab)
 
-            SheetSection("MISE AU POINT · OBJECTIF")
-            TileRow {
-                SheetTile("FOCUS", settings.focusMode.label, tab == Tab.Focus) { pick(Tab.Focus) }
-                SheetTile("OBJECTIF", lensSel?.label ?: "1×", tab == Tab.Lens) { pick(Tab.Lens) }
-            }
-            if (tab == Tab.Focus || tab == Tab.Lens) dialArea(tab)
-
-            // écrire sur le bord : seulement sur un tirage instantané (le format se choisit avec la pellicule)
-            if (format.canWrite) {
-                SheetSection("TIRAGE")
+                SheetSection("EXPOSITION")
                 TileRow {
-                    SheetTile("TEXTE", if (inscription.active) inscription.mode.label else "—", tab == Tab.Text) { pick(Tab.Text) }
+                    SheetTile("MODE", if (settings.manual) "M" else "A", settings.manual) {
+                        if (settings.manual) settings = settings.copy(manual = false) else enterManual()
+                    }
+                    SheetTile("VITESSE", if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO", tab == Tab.Speed) { pick(Tab.Speed) }
+                    SheetTile("ISO", if (settings.manual) settings.iso.toString() else "AUTO", tab == Tab.Iso) { pick(Tab.Iso) }
+                    SheetTile("EV", if (settings.manual) "—" else evLabel(settings.evIndex, evStep), tab == Tab.Ev) { pick(Tab.Ev) }
                 }
-                if (tab == Tab.Text) dialArea(tab)
-            }
+                if (tab == Tab.Speed || tab == Tab.Iso || tab == Tab.Ev) dialArea(tab)
 
-            SheetSection("IMAGE")
-            TileRow {
-                SheetTile("BLANCS", if (recipe.wb == WhiteBalance.KELVIN) "${recipe.kelvin}K" else "AUTO", tab == Tab.Wb) { pick(Tab.Wb) }
-                SheetTile("RECETTE", "Éditer", false) {
-                    sheet = null
-                    editing = true
+                SheetSection("MISE AU POINT · OBJECTIF")
+                TileRow {
+                    SheetTile("FOCUS", settings.focusMode.label, tab == Tab.Focus) { pick(Tab.Focus) }
+                    SheetTile("OBJECTIF", lensSel?.label ?: "1×", tab == Tab.Lens) { pick(Tab.Lens) }
+                }
+                if (tab == Tab.Focus || tab == Tab.Lens) dialArea(tab)
+
+                // écrire sur le bord : seulement sur un tirage instantané (le format se choisit avec la pellicule)
+                if (format.canWrite) {
+                    SheetSection("TIRAGE")
+                    TileRow {
+                        SheetTile("TEXTE", if (inscription.active) inscription.mode.label else "—", tab == Tab.Text) { pick(Tab.Text) }
+                    }
+                    if (tab == Tab.Text) dialArea(tab)
+                }
+
+                SheetSection("IMAGE")
+                TileRow {
+                    SheetTile("BLANCS", if (recipe.wb == WhiteBalance.KELVIN) "${recipe.kelvin}K" else "AUTO", tab == Tab.Wb) { pick(Tab.Wb) }
+                    SheetTile("RECETTE", "Éditer", false) {
+                        sheet = null
+                        editing = true
+                    }
+                }
+                if (tab == Tab.Wb) dialArea(tab)
+            }
+        }
+        if (sheet == Sheet.Display) {
+            BottomSheet(Modifier.align(Alignment.BottomCenter), onClose = { sheet = null }) {
+                SheetSection("GRILLE DE COMPOSITION")
+                androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(GridType.entries) { g -> Chip(g.label, display.grid == g) { setDisplay(display.copy(grid = g)) } }
+                }
+                SheetSection("AIDES")
+                ToggleRow("Niveau (horizon)", "La ligne devient ambre quand le téléphone est droit", display.level) {
+                    setDisplay(display.copy(level = it))
+                }
+                ToggleRow("Infos d'exposition", "Vitesse, ISO et mise au point en bas du viseur", display.info) {
+                    setDisplay(display.copy(info = it))
+                }
+                ToggleRow("Coins du viseur", "Les repères dans les angles", display.corners) {
+                    setDisplay(display.copy(corners = it))
                 }
             }
-            if (tab == Tab.Wb) dialArea(tab)
         }
-    }
-    if (sheet == Sheet.Display) {
-        BottomSheet(Modifier.align(Alignment.BottomCenter), onClose = { sheet = null }) {
-            SheetSection("GRILLE DE COMPOSITION")
-            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(GridType.entries) { g -> Chip(g.label, display.grid == g) { setDisplay(display.copy(grid = g)) } }
-            }
-            SheetSection("AIDES")
-            ToggleRow("Niveau (horizon)", "La ligne devient ambre quand le téléphone est droit", display.level) {
-                setDisplay(display.copy(level = it))
-            }
-            ToggleRow("Infos d'exposition", "Vitesse, ISO et mise au point en bas du viseur", display.info) {
-                setDisplay(display.copy(info = it))
-            }
-            ToggleRow("Coins du viseur", "Les repères dans les angles", display.corners) {
-                setDisplay(display.copy(corners = it))
-            }
-        }
-    }
-    if (sheet == Sheet.Library) {
-        RecipeLibrary(
-            modifier = Modifier.align(Alignment.BottomCenter),
-            recipes = customRecipes + Recipes.builtIns,
-            selectedId = saved.id,
-            formats = PhotoFormat.entries.filter { it.allows(recipe.base()) },
-            format = format,
-            onFormat = { setFormat(it) },
-            onPick = { r ->
-                if (r.id == saved.id) {
+        if (sheet == Sheet.Library) {
+            RecipeLibrary(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                recipes = customRecipes + Recipes.builtIns,
+                selectedId = saved.id,
+                formats = PhotoFormat.entries.filter { it.allows(recipe.base()) },
+                format = format,
+                onFormat = { setFormat(it) },
+                onPick = { r ->
+                    if (r.id == saved.id) {
+                        sheet = null
+                        editing = true
+                    } else {
+                        pickFilm(r)
+                        sheet = null
+                    }
+                },
+                onEdit = {
                     sheet = null
                     editing = true
-                } else {
-                    pickFilm(r)
+                },
+                onNew = {
+                    duplicateRecipe()
                     sheet = null
-                }
-            },
-            onEdit = {
-                sheet = null
-                editing = true
-            },
-            onNew = {
-                duplicateRecipe()
-                sheet = null
-                editing = true
-            },
-            onClose = { sheet = null },
+                    editing = true
+                },
+                onClose = { sheet = null },
+            )
+        }
+    if (editing && landscape) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { editing = false },
         )
+        editorPanel(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)),
+        )
+    }
     }
 
     // Saisie du petit mot (clavier Android)
@@ -1345,7 +1369,28 @@ fun CameraScreen(
     }
 
     // Tirage Polaroid qui se développe après la prise de vue
-    developing?.let { (uri, frame) -> PrintDeveloping(uri, frame) { developing = null } }
+    developing?.let { (uri, frame) ->
+        Oriented(uiAngle, landscape) { PrintDeveloping(uri, frame) { developing = null } }
+    }
+    }
+}
+
+/**
+ * Conteneur plein écran qui pivote avec le téléphone : en paysage, son contenu est dessiné
+ * droit pour le photographe (largeur et hauteur échangées).
+ */
+@Composable
+private fun Oriented(angle: Float, landscape: Boolean, content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val w = if (landscape) maxHeight else maxWidth
+        val h = if (landscape) maxWidth else maxHeight
+        Box(
+            Modifier
+                .align(Alignment.Center)
+                .requiredSize(w, h)
+                .graphicsLayer { rotationZ = angle },
+            content = content,
+        )
     }
 }
 

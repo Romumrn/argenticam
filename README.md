@@ -21,7 +21,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
   - En plus : vignettage, halation, intensité du film
 
 **Prise de vue**
-- **Rotation** : l'écran reste en portrait (comme l'appareil photo d'Android) mais les boutons et les infos pivotent quand on tourne le téléphone, la photo est enregistrée dans le bon sens, et les cadres (Polaroid, Instax, 35 mm…) restent droits pour le photographe
+- **Rotation** : l'écran reste en portrait (comme l'appareil photo d'Android) mais les boutons et les infos pivotent quand on tourne le téléphone, la photo est enregistrée dans le bon sens, et les cadres (Polaroid, Instax, 35 mm…) restent droits pour le photographe ; les panneaux (réglages, pellicules, affichage, éditeur de recette, tirage qui se développe) pivotent aussi
 - **Déclenchement immédiat** : capture à latence minimale, développement en arrière-plan (on peut enchaîner les photos ; un indicateur tourne sur la vignette pendant le développement)
 - **Affichage du viseur** (bouton en haut à droite) : grille de composition (tiers, nombre d'or, quadrillage, diagonales, centre), **niveau** d'horizon, infos d'exposition et coins du viseur à afficher ou masquer
 - **Interface minimale** : grand viseur, la pellicule en cours (toucher = bibliothèque des recettes par catégorie) et le déclencheur. Les réglages sont dans un **tiroir** (glisser vers le haut) rangé en Exposition, Mise au point · Objectif, Tirage et Image ; toucher une case ouvre sa molette juste en dessous

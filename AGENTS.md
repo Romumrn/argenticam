@@ -105,6 +105,7 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
   (photo à l'endroit) et `uiAngle` fait pivoter les commandes et le calque d'infos du viseur. Les cadres se dessinent
   "droits pour le photographe" via `PrintFrame.layoutMatrix` ; utiliser `holeRectOnScreen` / `shaderFrameOnScreen`, et
   `crop()` recadre selon les proportions réelles de la photo (portrait ou paysage).
+  Les panneaux plein écran passent par `Oriented(uiAngle, landscape)` (contenu droit pour le photographe).
 - **Balance des blancs** : `AUTO` ou `KELVIN`. En Kelvin, le téléphone est calé en lumière du jour
   et le shader convertit vers la température choisie (`kelvinGain` dans `Recipe.kt`).
 - Pas de `AnimatedVisibility` directement dans un `Box` imbriqué dans un `Column` (conflit de
