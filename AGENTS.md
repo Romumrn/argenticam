@@ -50,6 +50,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `PhotoPipeline.kt` | JPEG CameraX → rotation → shader → MediaStore (`Pictures/ArgentiCam`) |
 | `LutCache.kt` | Chargement des LUT 3D depuis `assets/luts/` |
 | `RetroDial.kt` | La molette rétro (crans, vibration, inertie) |
+| `Frames.kt` | `PhotoFormat` (Standard, Polaroid, 35 mm, Jetable) et `PrintFrame` : géométrie en mm, recadrage, composition, `drawBorder` partagé viseur / photo |
 | `Polaroid.kt` | Mode Polaroid : géométrie (Polaroid 600), recadrage carré, cadre papier, masque du viseur, développement animé |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée, MediaStore, compteur de rouleau |
 | `Inscription.kt` | Date / petit mot imprimés (dos dateur orange, légende manuscrite Polaroid), même code pour le viseur et la photo |
@@ -88,6 +89,9 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
   le shader, donc `FULL_FRAME`.
 - Viseur Polaroid : dessiner le cadre avec des rectangles pleins, **jamais** de `Path` troué en `EvenOdd`
   (rempli entièrement sur certains Xiaomi). Les pellicules `instant = true` sont les seules proposées en mode Polaroid.
+- **Formats encadrés** : tout passe par `PrintFrame` (`Frames.kt`). `drawBorder` dessine le cadre sans jamais toucher
+  la fenêtre de l'image, avec le même code dans le viseur et sur la photo. Un nouveau format = une nouvelle `PrintFrame`.
+  Les pellicules `disposable = true` sont les seules proposées en mode Jetable (comme `instant` en Polaroid).
 - **Balance des blancs** : `AUTO` ou `KELVIN`. En Kelvin, le téléphone est calé en lumière du jour
   et le shader convertit vers la température choisie (`kelvinGain` dans `Recipe.kt`).
 - Pas de `AnimatedVisibility` directement dans un `Box` imbriqué dans un `Column` (conflit de

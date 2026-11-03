@@ -104,6 +104,7 @@ class FilmProgram(private val external: Boolean) {
         GLES20.glUniform1f(loc("uHighlight"), p.highlight)
         GLES20.glUniform1f(loc("uShadow"), p.shadow)
         GLES20.glUniform1f(loc("uPeaking"), if (peaking) 1f else 0f)
+        GLES20.glUniform1f(loc("uSoft"), p.softCorners)
         GLES20.glUniform3fv(loc("uBwMix"), 1, p.bwMix, 0)
         GLES20.glUniform3fv(loc("uMonoTint"), 1, p.monoTint, 0)
 
@@ -213,6 +214,7 @@ uniform float uDR;
 uniform float uHighlight;
 uniform float uShadow;
 uniform float uPeaking;
+uniform float uSoft;
 uniform vec4 uFrame; // zone de la photo dans l'image affichée (x, y, l, h ; origine en bas à gauche)
 uniform sampler2D uLut;
 uniform float uLutOn;
@@ -265,6 +267,16 @@ float grainField(vec2 p) {
 void main() {
     vec3 src = texture2D(uTex, vTex).rgb;
     vec3 c = src;
+
+    // Objectif en plastique (jetable) : de plus en plus flou vers les coins
+    if (uSoft > 0.001) {
+        vec2 q = (vUv - uFrame.xy) / uFrame.zw - 0.5;
+        q.x *= uAspect * uFrame.z / uFrame.w;
+        float r = uSoft * smoothstep(0.2, 0.7, length(q)) * 0.0045;
+        vec3 b = tap(vec2(r, 0.0)) + tap(vec2(-r, 0.0)) + tap(vec2(0.0, r)) + tap(vec2(0.0, -r))
+               + tap(vec2(r, r) * 0.7) + tap(vec2(-r, r) * 0.7) + tap(vec2(r, -r) * 0.7) + tap(vec2(-r, -r) * 0.7);
+        c = (c + b) / 9.0;
+    }
 
     // Netteté : masque flou sur un petit rayon (négatif = adoucit)
     if (abs(uSharp) > 0.001) {

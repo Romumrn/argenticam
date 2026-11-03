@@ -33,6 +33,10 @@ data class FilmPreset(
     val fuji: Boolean = false,
     /** Film instantané : seul proposé en mode Polaroid. */
     val instant: Boolean = false,
+    /** Appareil jetable : seul proposé en mode Jetable. */
+    val disposable: Boolean = false,
+    /** Flou vers les coins (objectif en plastique). 0..1 */
+    val softCorners: Float = 0f,
 )
 
 object Presets {
@@ -80,6 +84,28 @@ object Presets {
         FilmPreset(
             id = "fuji_monochrome", name = "Monochrome", subtitle = "Fuji · N&B neutre", fuji = true,
             bw = true,
+        ),
+        // --- Appareils jetables ---
+        FilmPreset(
+            id = "disposable400", name = "Jetable 400", subtitle = "jetable · saturé, chaud", disposable = true,
+            exposure = 0.05f, contrast = 1.12f, saturation = 1.25f, fade = 0.02f,
+            gain = v(1.05f, 1.0f, 0.9f),
+            shadowTint = v(0.0f, 0.01f, 0.02f),
+            highlightTint = v(0.02f, 0.012f, -0.01f),
+            grain = 0.13f, grainSize = 1.6f, vignette = 0.55f, halation = 0.1f, softCorners = 0.9f,
+        ),
+        FilmPreset(
+            id = "disposable800", name = "Jetable 800", subtitle = "jetable · soirée, grain fort", disposable = true,
+            exposure = 0.1f, contrast = 1.05f, saturation = 1.1f, fade = 0.04f,
+            gain = v(1.0f, 1.03f, 0.96f),
+            shadowTint = v(-0.01f, 0.02f, 0.01f),
+            highlightTint = v(0.015f, 0.01f, 0.0f),
+            grain = 0.2f, grainSize = 1.9f, vignette = 0.6f, softCorners = 1f,
+        ),
+        FilmPreset(
+            id = "disposablebw", name = "Jetable N&B", subtitle = "jetable · noir et blanc dur", disposable = true,
+            bw = true, contrast = 1.2f, fade = 0.03f,
+            grain = 0.18f, grainSize = 1.7f, vignette = 0.6f, softCorners = 0.9f,
         ),
         // --- Pellicules ---
         FilmPreset(

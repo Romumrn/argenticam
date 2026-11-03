@@ -185,7 +185,9 @@ fun CameraScreen(
     var peaking by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(Tab.Recipe) }
-    var polaroid by remember { mutableStateOf(false) }
+    var format by remember { mutableStateOf(PhotoFormat.STANDARD) }
+    val polaroid = format == PhotoFormat.POLAROID
+    var flashOn by remember { mutableStateOf(false) }
     var developing by remember { mutableStateOf<android.net.Uri?>(null) }
     var inscription by remember { mutableStateOf(InscriptionStore.load(context)) }
     var typingNote by remember { mutableStateOf(false) }
@@ -393,11 +395,28 @@ fun CameraScreen(
         )
     }
 
-    fun setPolaroid(on: Boolean) {
-        polaroid = on
-        // en passant en Polaroid, on charge une pellicule instantanée (modifiable ensuite)
-        if (on && !recipe.base().instant) {
-            Recipes.builtIns.firstOrNull { it.id == "base_polaroid600" }?.let { selectRecipe(it) }
+    /** Pellicules proposées selon le format : instantanées en Polaroid, jetables en Jetable. */
+    fun allowedBase(p: FilmPreset): Boolean = when (format) {
+        PhotoFormat.POLAROID -> p.instant
+        PhotoFormat.DISPOSABLE -> p.disposable
+        else -> true
+    }
+
+    fun setFormat(f: PhotoFormat) {
+        format = f
+        when (f) {
+            // en Polaroid, une pellicule instantanée (modifiable ensuite)
+            PhotoFormat.POLAROID -> if (!recipe.base().instant) {
+                Recipes.builtIns.firstOrNull { it.id == "base_polaroid600" }?.let { selectRecipe(it) }
+            }
+            // en jetable, une pellicule de jetable, et la date orange comme sur les vrais
+            PhotoFormat.DISPOSABLE -> {
+                if (!recipe.base().disposable) {
+                    Recipes.builtIns.firstOrNull { it.id == "base_disposable400" }?.let { selectRecipe(it) }
+                }
+                if (inscription.mode == InscriptionMode.NONE) setInscription(inscription.copy(mode = InscriptionMode.DATE))
+            }
+            else -> Unit
         }
     }
 
@@ -411,17 +430,21 @@ fun CameraScreen(
         }
         val params = renderParams
         val name = recipe.name
-        val asPolaroid = polaroid
+        val fmt = format
         val note = inscription
+        val edge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
+        // Jetable : le vrai flash du téléphone, si on l'a allumé
+        imageCapture.flashMode =
+            if (fmt == PhotoFormat.DISPOSABLE && flashOn) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
         imageCapture.takePicture(
             workExecutor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
                     try {
-                        val uri = PhotoPipeline.develop(context, image, params, name, asPolaroid, note)
+                        val uri = PhotoPipeline.develop(context, image, params, name, fmt, note, edge)
                         mainExecutor.execute {
                             currentOnSaved()
-                            if (asPolaroid) developing = uri
+                            if (fmt == PhotoFormat.POLAROID) developing = uri
                         }
                     } catch (e: Exception) {
                         mainExecutor.execute {
@@ -466,19 +489,23 @@ fun CameraScreen(
                             peaking && mfActive,
                             if (loupe && mfActive) 3f else 1f,
                             loupeCenter.x, loupeCenter.y,
-                            if (polaroid) Polaroid.shaderFrame else FilmProgram.FULL_FRAME,
+                            format.frame?.shaderFrame ?: FilmProgram.FULL_FRAME,
                         )
                     },
                 )
-                if (polaroid) PolaroidViewfinderMask(Modifier.fillMaxSize()) else ViewfinderFrame()
+                val viewEdge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
+                format.frame?.let { FrameViewfinderMask(it, viewEdge, Modifier.fillMaxSize()) } ?: ViewfinderFrame()
 
                 // Date / petit mot, dessinés avec le même code que sur la photo finale
                 if (inscription.active) {
                     Canvas(Modifier.fillMaxSize()) {
                         drawIntoCanvas { c ->
                             if (polaroid) {
-                                val p = Polaroid.printRect(size.width, size.height)
+                                val p = PolaroidFrame.printRect(size.width, size.height)
                                 Imprint.drawPolaroidCaption(c.nativeCanvas, p.left, p.top, p.width(), inscription)
+                            } else if (format == PhotoFormat.FILM35) {
+                                val h = Film35Frame.holeRect(size.width, size.height)
+                                Imprint.drawStamp(c.nativeCanvas, h.left, h.top, h.width(), h.height(), inscription)
                             } else {
                                 Imprint.drawStamp(c.nativeCanvas, 0f, 0f, size.width, size.height, inscription)
                             }
@@ -543,6 +570,10 @@ fun CameraScreen(
                         color = Amber, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp,
                         modifier = Modifier.weight(1f),
                     )
+                    // Jetable : la pastille du flash (le vrai flash du téléphone)
+                    if (format == PhotoFormat.DISPOSABLE && camera?.cameraInfo?.hasFlashUnit() == true) {
+                        Pill("⚡ FLASH", flashOn, Modifier.padding(end = 8.dp)) { flashOn = !flashOn }
+                    }
                     Text(
                         RollCounter.label(shots),
                         color = Amber, fontSize = 13.sp, fontFamily = FontFamily.Monospace,
@@ -623,13 +654,13 @@ fun CameraScreen(
                 },
                 onClose = { editing = false },
                 modifier = Modifier.fillMaxWidth().height(400.dp),
-                instantOnly = polaroid,
+                baseFilter = { allowedBase(it) },
             )
         } else {
             // ================= Bande de réglages =================
             val strip = listOf(
                 Tab.Recipe to (recipe.name + if (modified) " •" else ""),
-                Tab.Format to if (polaroid) "POLAROID" else "3:4",
+                Tab.Format to format.short,
                 Tab.Text to if (inscription.active) inscription.mode.label.uppercase() else "—",
                 Tab.Lens to (lensSel?.label ?: "1×"),
                 Tab.Speed to if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO",
@@ -688,7 +719,8 @@ fun CameraScreen(
                             }
                         }
                         // En Polaroid, uniquement les recettes sur pellicule instantanée
-                        val shown = (customRecipes + Recipes.builtIns).filter { !polaroid || it.base().instant }
+                        // Selon le format : seulement les instantanés (Polaroid) ou les jetables (Jetable)
+                        val shown = (customRecipes + Recipes.builtIns).filter { allowedBase(it.base()) }
                         items(shown, key = { it.id }) { r ->
                             val selected = r.id == saved.id
                             val accent = filmAccent(r.baseId)
@@ -742,10 +774,10 @@ fun CameraScreen(
                     }
 
                     Tab.Format -> ValueRow(
-                        values = listOf(false, true),
-                        selected = polaroid,
-                        label = { if (it) "Polaroid ▢" else "Standard 3:4" },
-                        onPick = { setPolaroid(it) },
+                        values = PhotoFormat.entries,
+                        selected = format,
+                        label = { it.label },
+                        onPick = { setFormat(it) },
                     )
 
                     Tab.Lens -> ValueRow(

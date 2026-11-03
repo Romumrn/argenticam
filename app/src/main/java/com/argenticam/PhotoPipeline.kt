@@ -24,8 +24,9 @@ object PhotoPipeline {
         image: ImageProxy,
         params: RenderParams,
         name: String,
-        polaroid: Boolean = false,
+        format: PhotoFormat = PhotoFormat.STANDARD,
         inscription: Inscription = Inscription(),
+        edge: EdgeInfo = EdgeInfo(name.uppercase(Locale.FRENCH), 1),
     ): Uri {
         val rotation = image.imageInfo.rotationDegrees
         val buffer = image.planes[0].buffer
@@ -50,17 +51,27 @@ object PhotoPipeline {
             bmp = rotated
         }
 
-        if (polaroid) {
-            // carré visé dans le viseur, développé, puis posé sur le cadre papier
-            val square = Polaroid.cropSquare(bmp)
-            if (square !== bmp) bmp.recycle()
-            val developed = if (params.strength <= 0f) square else FilmProcessor.process(square, params)
-            if (developed !== square) square.recycle()
-            bmp = Polaroid.compose(developed)
+        val frame = format.frame
+        if (frame != null) {
+            // fenêtre visée dans le viseur, développée, puis posée dans son cadre (Polaroid, bande 35 mm)
+            val cropped = frame.crop(bmp)
+            if (cropped !== bmp) bmp.recycle()
+            var developed = if (params.strength <= 0f) cropped else FilmProcessor.process(cropped, params)
+            if (developed !== cropped) cropped.recycle()
+            if (format == PhotoFormat.FILM35 && inscription.active) {
+                developed = mutable(developed)
+                Imprint.drawStamp(
+                    android.graphics.Canvas(developed), 0f, 0f,
+                    developed.width.toFloat(), developed.height.toFloat(), inscription,
+                )
+            }
+            bmp = frame.compose(developed, edge)
             developed.recycle()
-            Imprint.drawPolaroidCaption(android.graphics.Canvas(bmp), 0f, 0f, bmp.width.toFloat(), inscription)
+            if (format == PhotoFormat.POLAROID) {
+                Imprint.drawPolaroidCaption(android.graphics.Canvas(bmp), 0f, 0f, bmp.width.toFloat(), inscription)
+            }
             try {
-                return save(context, bmp, "polaroid-$name", exif, name)
+                return save(context, bmp, "${format.name.lowercase(Locale.ROOT)}-$name", exif, name)
             } finally {
                 bmp.recycle()
             }
@@ -69,11 +80,7 @@ object PhotoPipeline {
         var result = if (params.strength <= 0f) bmp else FilmProcessor.process(bmp, params)
         if (result !== bmp) bmp.recycle()
         if (inscription.active) {
-            if (!result.isMutable) {
-                val copy = result.copy(Bitmap.Config.ARGB_8888, true)
-                result.recycle()
-                result = copy
-            }
+            result = mutable(result)
             Imprint.drawStamp(
                 android.graphics.Canvas(result), 0f, 0f, result.width.toFloat(), result.height.toFloat(), inscription,
             )
@@ -84,6 +91,13 @@ object PhotoPipeline {
         } finally {
             result.recycle()
         }
+    }
+
+    private fun mutable(b: Bitmap): Bitmap {
+        if (b.isMutable) return b
+        val copy = b.copy(Bitmap.Config.ARGB_8888, true)
+        b.recycle()
+        return copy
     }
 
     private fun save(context: Context, bmp: Bitmap, name: String, exif: ExifInterface?, recipe: String): Uri {

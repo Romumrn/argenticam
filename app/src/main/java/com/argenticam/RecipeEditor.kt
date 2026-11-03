@@ -61,6 +61,9 @@ fun filmAccent(id: String): Color = when (id) {
     "polaroidbw" -> Color(0xFFBDBDBD)
     "expired" -> Color(0xFFE48FB1)
     "instax" -> Color(0xFF8BE0A4)
+    "disposable400" -> Color(0xFFFFB347)
+    "disposable800" -> Color(0xFFB0E57C)
+    "disposablebw" -> Color(0xFFCFCFCF)
     else -> Color.White
 }
 
@@ -85,8 +88,8 @@ fun RecipeEditor(
     onDelete: (() -> Unit)?,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Mode Polaroid : seules les pellicules instantanées sont proposées. */
-    instantOnly: Boolean = false,
+    /** Pellicules de base proposées (ex. seulement les instantanées en mode Polaroid). */
+    baseFilter: (FilmPreset) -> Boolean = { true },
 ) {
     val r = recipe
     Column(modifier.background(Panel)) {
@@ -130,7 +133,7 @@ fun RecipeEditor(
                 contentPadding = PaddingValues(horizontal = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(Presets.all.filter { !instantOnly || it.instant }, key = { it.id }) { p ->
+                items(Presets.all.filter(baseFilter), key = { it.id }) { p ->
                     val sel = p.id == r.baseId
                     val accent = filmAccent(p.id)
                     Row(

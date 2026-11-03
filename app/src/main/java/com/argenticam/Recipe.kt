@@ -82,6 +82,8 @@ class RenderParams(
     val lut: String?,
     val bwMix: FloatArray,
     val monoTint: FloatArray,
+    /** Flou vers les coins (objectif d'appareil jetable). */
+    val softCorners: Float = 0f,
 )
 
 fun Recipe.base(): FilmPreset = Presets.byId(baseId)
@@ -119,6 +121,7 @@ fun Recipe.render(): RenderParams {
         highlight = highlight,
         shadow = shadow,
         lut = p.lut,
+        softCorners = p.softCorners,
         bwMix = bwFilter.mix,
         monoTint = floatArrayOf(
             0.005f * monoWarm + 0.004f * monoMagenta,
