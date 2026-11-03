@@ -245,6 +245,23 @@ float hash(vec2 p) {
     return fract((p3.x + p3.y) * p3.z);
 }
 
+// Bruit lissé (interpolation douce entre les points d'une grille) : des amas doux, pas des carrés.
+float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Grain argentique : deux échelles d'amas superposées, centré sur 0.
+float grainField(vec2 p) {
+    return vnoise(p) * 0.65 + vnoise(p * 2.17 + 19.3) * 0.35 - 0.5;
+}
+
 void main() {
     vec3 src = texture2D(uTex, vTex).rgb;
     vec3 c = src;
@@ -348,10 +365,11 @@ void main() {
         float amp = uGrain * (0.35 + 0.65 * (1.0 - abs(lg - 0.5) * 2.0));
         vec2 fu = (vUv - uFrame.xy) / uFrame.zw;
         float fa = uAspect * uFrame.z / uFrame.w;
-        vec2 cell = floor(fu * vec2(uGrainCells * fa, uGrainCells)) + uSeed;
-        float n = hash(cell) - 0.5;
-        vec3 chroma = vec3(hash(cell + 17.0), hash(cell + 31.0), hash(cell + 53.0)) - 0.5;
-        c += amp * (vec3(n) * 1.6 + chroma * 0.5 * (1.0 - uBw));
+        vec2 gp = fu * vec2(uGrainCells * fa, uGrainCells) + vec2(uSeed * 7.13, uSeed * 3.71);
+        float n = grainField(gp);
+        vec3 chroma = vec3(grainField(gp + 41.0), grainField(gp + 83.0), grainField(gp + 127.0));
+        // le bruit lissé a moins d'écart que le bruit par case : on compense pour garder la même force
+        c += amp * (vec3(n) * 3.2 + chroma * 1.0 * (1.0 - uBw));
     }
 
     // Vignettage
