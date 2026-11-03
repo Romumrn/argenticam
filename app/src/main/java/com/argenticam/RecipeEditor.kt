@@ -157,7 +157,7 @@ fun RecipeEditor(
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
+                        Recipes.builtIns.firstOrNull { it.id == "base_${p.id}" }?.let { RecipeThumb(it, 24.dp, 31.dp) }
                         Spacer(Modifier.width(8.dp))
                         Text(p.name, color = if (sel) accent else Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }

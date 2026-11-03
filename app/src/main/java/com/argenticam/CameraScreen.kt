@@ -152,6 +152,10 @@ fun CameraScreen(
         RecipeStore.setActiveId(context, r.id)
     }
 
+    // dernière recette choisie dans chaque famille (classique, instantané...) : on la retrouve
+    // en revenant à un format de cette famille
+    val lastByKind = remember { mutableMapOf<FilmKind, String>() }
+
     fun persist(list: List<Recipe>) {
         customRecipes = list
         RecipeStore.saveCustom(context, list)
@@ -422,14 +426,29 @@ fun CameraScreen(
             pendingHalf = null
         }
         format = f
-        // pellicule adaptée au format (instantané, jetable, cabine), modifiable ensuite
+        // le format impose sa famille de pellicule : on reprend la dernière utilisée, sinon celle par défaut
         if (!f.allows(recipe.base())) {
-            f.defaultBase?.let { id -> Recipes.builtIns.firstOrNull { it.id == "base_$id" }?.let { selectRecipe(it) } }
+            lastByKind[recipe.base().kind] = recipe.id
+            val all = customRecipes + Recipes.builtIns
+            val next = lastByKind[f.kind]?.let { id -> all.firstOrNull { it.id == id } }
+                ?.takeIf { f.allows(it.base()) }
+                ?: Recipes.builtIns.firstOrNull { it.id == "base_${f.defaultBase}" }
+            next?.let { selectRecipe(it) }
         }
-        // en jetable, la date orange comme sur les vrais
-        if (f == PhotoFormat.DISPOSABLE && inscription.mode == InscriptionMode.NONE) {
-            setInscription(inscription.copy(mode = InscriptionMode.DATE))
+    }
+
+    /** Choisir une pellicule fait passer au format qui va avec (Polaroid, photomaton, jetable...). */
+    fun pickFilm(r: Recipe) {
+        val f = PhotoFormat.forFilm(r.base(), format)
+        if (f != format) {
+            if (f != PhotoFormat.HALF_FRAME && pendingHalf != null) {
+                PhotoPipeline.discardHalf(context)
+                pendingHalf = null
+            }
+            lastByKind[recipe.base().kind] = recipe.id
+            format = f
         }
+        selectRecipe(r)
     }
 
     /** Déclenche et récupère le JPEG (sans attendre le développement, pour enchaîner les poses). */
@@ -462,7 +481,7 @@ fun CameraScreen(
         val params = renderParams
         val name = recipe.name
         val fmt = format
-        val note = inscription
+        val note = if (fmt.canWrite) inscription else Inscription()
         val edge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
         // Jetable et photomaton : le vrai flash du téléphone, si on l'a allumé
         imageCapture.flashMode =
@@ -816,8 +835,8 @@ fun CameraScreen(
                 val viewEdge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
                 format.frame?.let { FrameViewfinderMask(it, viewEdge, Modifier.fillMaxSize()) } ?: ViewfinderFrame()
 
-                // Date / petit mot, dessinés avec le même code que sur la photo finale
-                if (inscription.active) {
+                // Date / petit mot (tirages instantanés), dessinés avec le même code que sur la photo finale
+                if (inscription.active && format.canWrite) {
                     Canvas(Modifier.fillMaxSize()) {
                         drawIntoCanvas { c ->
                             val fr = format.frame
@@ -997,7 +1016,13 @@ fun CameraScreen(
             RecipeEditor(
                 recipe = recipe,
                 modified = modified,
-                onChange = { recipe = it },
+                onChange = { r ->
+                    if (r.baseId != recipe.baseId) {
+                        val f = PhotoFormat.forFilm(r.base(), format)
+                        if (f != format) format = f
+                    }
+                    recipe = r
+                },
                 onSave = { saveRecipe() },
                 onDuplicate = { duplicateRecipe() },
                 onReset = { recipe = saved },
@@ -1032,7 +1057,7 @@ fun CameraScreen(
                         .padding(horizontal = 18.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(9.dp).clip(CircleShape).background(filmAccent(recipe.baseId)))
+                    RecipeThumb(recipe, 22.dp, 28.dp)
                     Spacer(Modifier.width(10.dp))
                     Text(
                         recipe.name + if (modified) " •" else "",
@@ -1120,9 +1145,12 @@ fun CameraScreen(
             SheetSection("TIRAGE")
             TileRow {
                 SheetTile("FORMAT", format.short, tab == Tab.Format) { pick(Tab.Format) }
-                SheetTile("TEXTE", if (inscription.active) inscription.mode.label else "—", tab == Tab.Text) { pick(Tab.Text) }
+                // écrire sur le bord : seulement sur un tirage instantané
+                if (format.canWrite) {
+                    SheetTile("TEXTE", if (inscription.active) inscription.mode.label else "—", tab == Tab.Text) { pick(Tab.Text) }
+                }
             }
-            if (tab == Tab.Format || tab == Tab.Text) dialArea(tab)
+            if (tab == Tab.Format || (tab == Tab.Text && format.canWrite)) dialArea(tab)
 
             SheetSection("IMAGE")
             TileRow {
@@ -1138,14 +1166,14 @@ fun CameraScreen(
     if (sheet == Sheet.Library) {
         RecipeLibrary(
             modifier = Modifier.align(Alignment.BottomCenter),
-            recipes = (customRecipes + Recipes.builtIns).filter { allowedBase(it.base()) },
+            recipes = customRecipes + Recipes.builtIns,
             selectedId = saved.id,
             onPick = { r ->
                 if (r.id == saved.id) {
                     sheet = null
                     editing = true
                 } else {
-                    selectRecipe(r)
+                    pickFilm(r)
                     sheet = null
                 }
             },
@@ -1332,8 +1360,8 @@ private fun RecipeLibrary(
                                 .padding(horizontal = 10.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
-                            Spacer(Modifier.width(8.dp))
+                            RecipeThumb(r, 34.dp, 44.dp)
+                            Spacer(Modifier.width(9.dp))
                             Column {
                                 Text(
                                     (if (!r.builtIn) "★ " else "") + r.name,

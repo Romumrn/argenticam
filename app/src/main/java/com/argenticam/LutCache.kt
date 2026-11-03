@@ -18,6 +18,22 @@ object LutCache {
         assets = assetManager
     }
 
+    private val images = HashMap<String, Bitmap>()
+
+    /** Image des assets (décodée une fois), ex. "sample.jpg" pour les vignettes des recettes. */
+    @Synchronized
+    fun asset(name: String): Bitmap? {
+        images[name]?.let { return it }
+        val am = assets ?: return null
+        val bmp = try {
+            am.open(name).use { BitmapFactory.decodeStream(it) }
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        images[name] = bmp
+        return bmp
+    }
+
     @Synchronized
     fun bitmap(name: String): Bitmap? {
         cache[name]?.let { return it }

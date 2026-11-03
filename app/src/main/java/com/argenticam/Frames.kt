@@ -57,24 +57,62 @@ enum class PhotoFormat(
     /** Tirage instantané : il "sort de l'appareil" et se développe à l'écran. */
     val instantPrint: Boolean get() = frame is PaperFrame
 
+    /** Famille de pellicules qui va avec ce format : le format et la pellicule vont ensemble. */
+    val kind: FilmKind
+        get() = when (this) {
+            POLAROID, POLAROID_GO, SPECTRA, INSTAX_MINI -> FilmKind.INSTANT
+            DISPOSABLE -> FilmKind.DISPOSABLE
+            PHOTOBOOTH -> FilmKind.BOOTH
+            else -> FilmKind.REGULAR
+        }
+
     /** Pellicules proposées dans ce format. */
-    fun allows(p: FilmPreset): Boolean = when (this) {
-        POLAROID, POLAROID_GO, SPECTRA, INSTAX_MINI -> p.instant
-        DISPOSABLE -> p.disposable
-        PHOTOBOOTH -> p.booth
-        else -> true
-    }
+    fun allows(p: FilmPreset): Boolean = p.kind == kind
+
+    /** Tirage instantané : on peut y écrire la date ou un petit mot, à la main sur le bord. */
+    val canWrite: Boolean get() = kind == FilmKind.INSTANT
 
     /** Pellicule chargée en entrant dans ce format (si la recette actuelle ne convient pas). */
-    val defaultBase: String?
+    val defaultBase: String
         get() = when (this) {
             POLAROID, POLAROID_GO, SPECTRA -> "polaroid600"
             INSTAX_MINI -> "instax"
             DISPOSABLE -> "disposable400"
             PHOTOBOOTH -> "boothbw"
-            else -> null
+            else -> "fuji_provia"
         }
+
+    companion object {
+        /**
+         * Format qui va avec une pellicule, en gardant le format actuel s'il convient :
+         * une pellicule Polaroid -> Polaroid (ou Go / Spectra si on y est déjà), Instax -> Instax Mini,
+         * photomaton -> Photomaton, jetable -> Jetable, pellicule classique -> le format actuel
+         * s'il est classique (3:4, 35 mm, demi-format, 6x6), sinon Standard.
+         */
+        fun forFilm(p: FilmPreset, current: PhotoFormat): PhotoFormat = when (p.kind) {
+            FilmKind.BOOTH -> PHOTOBOOTH
+            FilmKind.DISPOSABLE -> DISPOSABLE
+            FilmKind.INSTANT -> when {
+                p.id == "instax" -> INSTAX_MINI
+                current == INSTAX_MINI -> POLAROID
+                current.kind == FilmKind.INSTANT -> current
+                else -> POLAROID
+            }
+            FilmKind.REGULAR -> if (current.kind == FilmKind.REGULAR) current else STANDARD
+        }
+    }
 }
+
+/** Familles de pellicules. */
+enum class FilmKind { REGULAR, INSTANT, DISPOSABLE, BOOTH }
+
+val FilmPreset.kind: FilmKind
+    get() = when {
+        instant -> FilmKind.INSTANT
+        disposable -> FilmKind.DISPOSABLE
+        booth -> FilmKind.BOOTH
+        else -> FilmKind.REGULAR
+    }
 
 /** Ce qui est imprimé sur les bords d'une bande de film. */
 data class EdgeInfo(val filmName: String, val frameNumber: Int)

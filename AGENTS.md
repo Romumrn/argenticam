@@ -95,6 +95,10 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
   Formats à plusieurs déclenchements (`shots` > 1) : demi-format (1re vue gardée dans le cache, `PhotoPipeline.developHalf*`)
   et photomaton (4 `Capture` enchaînées avec compte à rebours, `developBooth`). Les captures passent par `capture()`
   (coroutine) : on lit le JPEG tout de suite, le développement se fait après.
+- **Format ↔ pellicule** : `FilmKind` (REGULAR, INSTANT, DISPOSABLE, BOOTH). `PhotoFormat.allows` = même famille ;
+  `PhotoFormat.forFilm` donne le format d'une pellicule. Choisir une pellicule (`pickFilm`) change le format, choisir un
+  format (`setFormat`) change la pellicule. La date / le petit mot ne s'impriment que si `format.canWrite` (instantanés).
+- Vignettes : `RecipeThumbs` développe `assets/sample.jpg` (scène dessinée, libre de droits) avec la recette, en cache.
 - **Balance des blancs** : `AUTO` ou `KELVIN`. En Kelvin, le téléphone est calé en lumière du jour
   et le shader convertit vers la température choisie (`kelvinGain` dans `Recipe.kt`).
 - Pas de `AnimatedVisibility` directement dans un `Box` imbriqué dans un `Column` (conflit de
