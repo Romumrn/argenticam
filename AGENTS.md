@@ -54,6 +54,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `Polaroid.kt` | Mode Polaroid : géométrie (Polaroid 600), recadrage carré, cadre papier, masque du viseur, développement animé |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie : onglets Pellicule (planche contact) / Tirages ; MediaStore, compteur de rouleau. Format et pellicule sont lus dans le nom de fichier `ARGENTICAM_<format>_<pellicule>_<date>_<heure>.jpg` (`PhotoLibrary.parseName`, rétrocompatible) : ne pas changer ce nommage sans adapter le parseur |
 | `Inscription.kt` | Date / petit mot imprimés (dos dateur orange, légende manuscrite Polaroid), même code pour le viseur et la photo |
+| `DisplayGuides.kt` | Affichage du viseur : grilles de composition, coins, niveau (capteur de gravité), préférences |
 | `ZoomableImage.kt` | Image zoomable de la visionneuse (pincement, déplacement, double-tap ; ne consomme pas le swipe du pager à ×1) |
 
 ### Chaîne de rendu
@@ -76,8 +77,9 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
   l'aperçu, le Polaroid et chaque tuile du développement identiques. Tout nouvel effet qui lit des pixels
   voisins doit passer par `tap` et rester sous `FilmProcessor.REACH` (marge des tuiles), sinon il y aura des coutures.
 - Grain et vignettage se calculent en coordonnées de la photo entière : `(vUv - uFrame.xy) / uFrame.zw`.
-- Qualité : capture `HIGHEST_AVAILABLE_STRATEGY` + `PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE`, JPEG 100,
-  EXIF recopiés (`PhotoPipeline.copyExif`). Ne pas réintroduire de plafond de résolution.
+- Capture : `CAPTURE_MODE_MINIMIZE_LATENCY` + `HIGHEST_AVAILABLE_STRATEGY` (sans les modes ultra-haute résolution, lents
+  à activer), JPEG 100, EXIF recopiés. Le déclencheur se libère dès que le JPEG est lu ; le développement passe par
+  `developDispatcher` (un seul à la fois, dans l'ordre). Ne pas remettre `MAXIMIZE_QUALITY` (latence de l'ordre de la seconde).
 - **Orientation de l'aperçu** : la matrice du `SurfaceTexture` inclut déjà la rotation capteur → écran.
   Ne pas rajouter de rotation (ça a déjà penché l'image). L'activité est verrouillée en portrait.
 - **Réglages manuels** : beaucoup de téléphones (Xiaomi notamment) n'autorisent pas les applis

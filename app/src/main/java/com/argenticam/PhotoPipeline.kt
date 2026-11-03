@@ -11,7 +11,6 @@ import android.provider.MediaStore
 import androidx.camera.core.ImageProxy
 import androidx.exifinterface.media.ExifInterface
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -130,47 +129,34 @@ object PhotoPipeline {
         }
     }
 
-    private fun halfFile(context: Context) = File(context.cacheDir, "demi-format-vue-1.jpg")
-
-    /**
-     * Demi-format, première moitié : développée et mise de côté en attendant la seconde.
-     * Retourne le fichier temporaire.
-     */
-    fun developHalfFirst(context: Context, capture: Capture, params: RenderParams): File {
-        val half = film(decode(capture, HALF_MAX_PX), params)
-        val file = halfFile(context)
-        file.outputStream().use { half.compress(Bitmap.CompressFormat.JPEG, 100, it) }
-        half.recycle()
-        return file
+    /** Petite image d'une capture (vignette), à l'endroit. */
+    fun preview(c: Capture, maxPx: Int): Bitmap? = try {
+        decode(c, maxPx)
+    } catch (_: Exception) {
+        null
     }
 
-    /** Demi-format, seconde moitié : les deux vues côte à côte sur la bande, enregistrées. */
-    fun developHalfSecond(
+    /** Demi-format : les deux vues développées, côte à côte sur la bande, enregistrées. */
+    fun developHalf(
         context: Context,
-        first: File,
-        capture: Capture,
+        first: Capture,
+        second: Capture,
         params: RenderParams,
         name: String,
         inscription: Inscription,
         edge: EdgeInfo,
     ): Uri {
-        val exif = exifOf(capture)
-        val right = stamp(film(decode(capture, HALF_MAX_PX), params), inscription)
-        val left = BitmapFactory.decodeFile(first.absolutePath) ?: error("Première vue introuvable")
+        val exif = exifOf(second)
+        val left = film(decode(first, HALF_MAX_PX), params)
+        val right = stamp(film(decode(second, HALF_MAX_PX), params), inscription)
         val strip = HalfFrameStrip.compose(left, right, edge)
         left.recycle()
         right.recycle()
-        first.delete()
         try {
             return save(context, strip, PhotoFormat.HALF_FRAME, name, exif)
         } finally {
             strip.recycle()
         }
-    }
-
-    /** Abandonne une première moitié de demi-format en attente. */
-    fun discardHalf(context: Context) {
-        halfFile(context).delete()
     }
 
     /** Photomaton : 4 poses recadrées et développées, sur une bande de cabine photo. */

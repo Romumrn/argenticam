@@ -98,6 +98,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -116,7 +117,7 @@ private enum class Tab(val label: String) {
     Recipe("RECETTE"), Format("FORMAT"), Text("TEXTE"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
 }
 
-private enum class Sheet { Settings, Library }
+private enum class Sheet { Settings, Library, Display }
 
 private enum class FocusUi { Idle, Searching, Locked, Failed, Manual }
 
@@ -200,13 +201,25 @@ fun CameraScreen(
     var busy by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(Tab.Recipe) } // Tab.Recipe = aucun réglage déplié
     var sheet by remember { mutableStateOf<Sheet?>(null) }
+    var display by remember { mutableStateOf(DisplayStore.load(context)) }
+    fun setDisplay(d: DisplayPrefs) {
+        display = d
+        DisplayStore.save(context, d)
+    }
+    val roll by rememberRoll(display.level && active)
     var format by remember { mutableStateOf(PhotoFormat.STANDARD) }
     val polaroid = format == PhotoFormat.POLAROID
     var flashOn by remember { mutableStateOf(false) }
     // tirage qui "sort de l'appareil" après la prise de vue (instantanés, photomaton)
     var developing by remember { mutableStateOf<Pair<android.net.Uri, PrintFrame?>?>(null) }
     // demi-format : première vue en attente de la seconde
-    var pendingHalf by remember { mutableStateOf<java.io.File?>(null) }
+    var pendingHalf by remember { mutableStateOf<Capture?>(null) }
+    // photos en cours de développement (en arrière-plan : on peut déjà reprendre une photo)
+    var developingCount by remember { mutableIntStateOf(0) }
+    // un seul développement à la fois (mémoire), dans l'ordre des prises de vue
+    val developDispatcher = remember {
+        java.util.concurrent.Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+    }
     // photomaton : compte à rebours et numéro de pose en cours
     var countdown by remember { mutableIntStateOf(0) }
     var boothPose by remember { mutableIntStateOf(0) }
@@ -233,7 +246,9 @@ fun CameraScreen(
     val previewView = remember { FilmPreviewView(context) }
     val imageCapture = remember {
         ImageCapture.Builder()
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            // Latence minimale : la photo part au moment de l'appui (pas de nouvelle mise au point /
+            // mesure avant de déclencher). La qualité du fichier reste maximale (JPEG 100, développement par tuiles).
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .setJpegQuality(100)
             .setResolutionSelector(
                 ResolutionSelector.Builder()
@@ -241,8 +256,9 @@ fun CameraScreen(
                     // Toujours la meilleure qualité : la plus haute résolution que le téléphone
                     // accepte de donner (y compris les modes haute résolution des gros capteurs).
                     // Le développement se fait par tuiles, la taille n'est donc pas limitée.
+                    // la plus haute résolution du mode normal du capteur (les modes "ultra haute résolution"
+                    // des gros capteurs mettent jusqu'à 1-2 s à s'activer à chaque photo)
                     .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
-                    .setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE)
                     .build(),
             )
             .build()
@@ -422,7 +438,6 @@ fun CameraScreen(
 
     fun setFormat(f: PhotoFormat) {
         if (f != PhotoFormat.HALF_FRAME && pendingHalf != null) {
-            PhotoPipeline.discardHalf(context)
             pendingHalf = null
         }
         format = f
@@ -441,10 +456,7 @@ fun CameraScreen(
     fun pickFilm(r: Recipe) {
         val f = PhotoFormat.forFilm(r.base(), format)
         if (f != format) {
-            if (f != PhotoFormat.HALF_FRAME && pendingHalf != null) {
-                PhotoPipeline.discardHalf(context)
-                pendingHalf = null
-            }
+            if (f != PhotoFormat.HALF_FRAME) pendingHalf = null
             lastByKind[recipe.base().kind] = recipe.id
             format = f
         }
@@ -491,6 +503,15 @@ fun CameraScreen(
                 ImageCapture.FLASH_MODE_OFF
             }
         scope.launch {
+            // Développe en arrière-plan : le déclencheur est libre dès que la photo est prise.
+            suspend fun <T> develop(block: () -> T): T {
+                developingCount++
+                try {
+                    return withContext(developDispatcher) { block() }
+                } finally {
+                    developingCount--
+                }
+            }
             try {
                 when (fmt) {
                     PhotoFormat.PHOTOBOOTH -> {
@@ -508,9 +529,8 @@ fun CameraScreen(
                             captures += capture()
                         }
                         boothPose = 0
-                        val uri = withContext(Dispatchers.Default) {
-                            PhotoPipeline.developBooth(context, captures, params, name, note)
-                        }
+                        busy = false
+                        val uri = develop { PhotoPipeline.developBooth(context, captures, params, name, note) }
                         currentOnSaved()
                         developing = uri to null
                     }
@@ -518,16 +538,13 @@ fun CameraScreen(
                     PhotoFormat.HALF_FRAME -> {
                         shutterFx()
                         val shot = capture()
+                        busy = false
                         val first = pendingHalf
                         if (first == null) {
-                            pendingHalf = withContext(Dispatchers.Default) {
-                                PhotoPipeline.developHalfFirst(context, shot, params)
-                            }
+                            pendingHalf = shot
                         } else {
-                            withContext(Dispatchers.Default) {
-                                PhotoPipeline.developHalfSecond(context, first, shot, params, name, note, edge)
-                            }
                             pendingHalf = null
+                            develop { PhotoPipeline.developHalf(context, first, shot, params, name, note, edge) }
                             currentOnSaved()
                         }
                     }
@@ -535,9 +552,8 @@ fun CameraScreen(
                     else -> {
                         shutterFx()
                         val shot = capture()
-                        val uri = withContext(Dispatchers.Default) {
-                            PhotoPipeline.develop(context, shot, params, name, fmt, note, edge)
-                        }
+                        busy = false
+                        val uri = develop { PhotoPipeline.develop(context, shot, params, name, fmt, note, edge) }
                         currentOnSaved()
                         if (fmt.instantPrint) developing = uri to fmt.frame
                     }
@@ -833,7 +849,17 @@ fun CameraScreen(
                     },
                 )
                 val viewEdge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
-                format.frame?.let { FrameViewfinderMask(it, viewEdge, Modifier.fillMaxSize()) } ?: ViewfinderFrame()
+                format.frame?.let { FrameViewfinderMask(it, viewEdge, Modifier.fillMaxSize()) }
+                // aides à la composition (grille, coins, niveau), dans la fenêtre de l'image
+                CompositionGuides(
+                    display,
+                    area = { w, h ->
+                        format.frame?.holeRect(w, h)?.let { androidx.compose.ui.geometry.Rect(it.left, it.top, it.right, it.bottom) }
+                            ?: androidx.compose.ui.geometry.Rect(0f, 0f, w, h)
+                    },
+                    roll = roll,
+                    modifier = Modifier.fillMaxSize(),
+                )
 
                 // Date / petit mot (tirages instantanés), dessinés avec le même code que sur la photo finale
                 if (inscription.active && format.canWrite) {
@@ -926,13 +952,12 @@ fun CameraScreen(
                             .padding(horizontal = 8.dp, vertical = 3.dp),
                     )
                     Box(
-                        Modifier.size(40.dp).clip(CircleShape).clickable { editing = !editing },
+                        Modifier.size(40.dp).clip(CircleShape).clickable {
+                            sheet = if (sheet == Sheet.Display) null else Sheet.Display
+                        },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            Icons.Default.Edit, contentDescription = "Modifier la recette",
-                            tint = if (editing) Amber else Color.White, modifier = Modifier.size(20.dp),
-                        )
+                        GridIcon(sheet == Sheet.Display)
                     }
                 }
 
@@ -941,9 +966,9 @@ fun CameraScreen(
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))))
                         .padding(start = 18.dp, end = 18.dp, top = 28.dp, bottom = 12.dp),
                 ) {
+                  if (display.info) {
                     val shutterTxt = readout.exposureNs?.let { shutterLabel(it) }
                         ?: if (settings.manual) shutterLabel(settings.shutterNs) else "AUTO"
                     val isoTxt = readout.iso?.toString() ?: if (settings.manual) settings.iso.toString() else "AUTO"
@@ -951,6 +976,7 @@ fun CameraScreen(
                     Text(
                         "${if (settings.manual) "M" else "A"}  $shutterTxt  ISO $isoTxt$evTxt",
                         color = Amber, fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
+                        style = OsdShadow,
                     )
                     val afLocked = readout.afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
                         readout.afState == CaptureResult.CONTROL_AF_STATE_PASSIVE_FOCUSED
@@ -958,11 +984,13 @@ fun CameraScreen(
                         "${settings.focusMode.label}  ${distanceLabel(readout.focusDiopters, calibrated)}" +
                             if (!mfActive && afLocked) "  ●" else "",
                         color = Amber.copy(alpha = 0.85f), fontSize = 12.sp, fontFamily = FontFamily.Monospace, letterSpacing = 1.sp,
+                        style = OsdShadow,
                     )
+                  }
                     if (showMismatch && mismatch != null) {
                         Text(
                             "⚠ ignoré par le téléphone : $mismatch",
-                            color = Warn, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp),
+                            color = Warn, fontSize = 11.sp, modifier = Modifier.padding(top = 2.dp), style = OsdShadow,
                         )
                     }
                 }
@@ -971,11 +999,7 @@ fun CameraScreen(
                 if (format == PhotoFormat.HALF_FRAME) {
                     val first = pendingHalf
                     val thumb: androidx.compose.ui.graphics.ImageBitmap? by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, first) {
-                        value = first?.let {
-                            withContext(Dispatchers.IO) {
-                                android.graphics.BitmapFactory.decodeFile(it.absolutePath, android.graphics.BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap()
-                            }
-                        }
+                        value = first?.let { withContext(Dispatchers.IO) { PhotoPipeline.preview(it, 256)?.asImageBitmap() } }
                     }
                     Column(
                         Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 52.dp),
@@ -1090,6 +1114,17 @@ fun CameraScreen(
                         if (lastPhoto != null) {
                             PhotoThumb(lastPhoto, 200, Modifier.fillMaxSize())
                         }
+                        // une photo se développe en arrière-plan
+                        if (developingCount > 0) {
+                            Box(
+                                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    color = Amber, strokeWidth = 2.dp, modifier = Modifier.size(22.dp),
+                                )
+                            }
+                        }
                     }
 
                     ShutterButton(busy = busy, onClick = { takePhoto() })
@@ -1167,6 +1202,24 @@ fun CameraScreen(
                 }
             }
             if (tab == Tab.Wb) dialArea(tab)
+        }
+    }
+    if (sheet == Sheet.Display) {
+        BottomSheet(Modifier.align(Alignment.BottomCenter), onClose = { sheet = null }) {
+            SheetSection("GRILLE DE COMPOSITION")
+            androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(GridType.entries) { g -> Chip(g.label, display.grid == g) { setDisplay(display.copy(grid = g)) } }
+            }
+            SheetSection("AIDES")
+            ToggleRow("Niveau (horizon)", "La ligne devient ambre quand le téléphone est droit", display.level) {
+                setDisplay(display.copy(level = it))
+            }
+            ToggleRow("Infos d'exposition", "Vitesse, ISO et mise au point en bas du viseur", display.info) {
+                setDisplay(display.copy(info = it))
+            }
+            ToggleRow("Coins du viseur", "Les repères dans les angles", display.corners) {
+                setDisplay(display.copy(corners = it))
+            }
         }
     }
     if (sheet == Sheet.Library) {
@@ -1302,6 +1355,45 @@ private fun RowScope.SheetTile(label: String, value: String, selected: Boolean, 
             value, color = if (selected) Amber else Color.White,
             fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1,
         )
+    }
+}
+
+private val OsdShadow = androidx.compose.ui.text.TextStyle(
+    shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.85f), Offset(0f, 1.5f), 6f),
+)
+
+/** Ligne avec un interrupteur (panneau Affichage). */
+@Composable
+private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 14.sp)
+            Text(subtitle, color = Color.White.copy(alpha = 0.5f), fontSize = 11.sp)
+        }
+        androidx.compose.material3.Switch(
+            checked = checked, onCheckedChange = onChange,
+            colors = androidx.compose.material3.SwitchDefaults.colors(
+                checkedThumbColor = Color.Black, checkedTrackColor = Amber,
+            ),
+        )
+    }
+}
+
+/** Icône "grille" (bouton Affichage, en haut à droite du viseur). */
+@Composable
+private fun GridIcon(active: Boolean) {
+    val c = if (active) Amber else Color.White
+    Canvas(Modifier.size(20.dp)) {
+        val w = size.width
+        val sw = 1.6.dp.toPx()
+        drawRect(c, style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
+        for (f in listOf(1f / 3f, 2f / 3f)) {
+            drawLine(c, Offset(w * f, 0f), Offset(w * f, w), strokeWidth = sw)
+            drawLine(c, Offset(0f, w * f), Offset(w, w * f), strokeWidth = sw)
+        }
     }
 }
 
