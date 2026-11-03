@@ -106,7 +106,7 @@ object PhotoPipeline {
         if (frame == null) {
             val result = stamp(film(bmp, params), inscription)
             try {
-                return save(context, result, name, exif, name)
+                return save(context, result, format, name, exif)
             } finally {
                 result.recycle()
             }
@@ -124,7 +124,7 @@ object PhotoPipeline {
             Imprint.drawCaption(android.graphics.Canvas(print), frame, 0f, 0f, print.width.toFloat(), inscription)
         }
         try {
-            return save(context, print, "${format.name.lowercase(Locale.ROOT)}-$name", exif, name)
+            return save(context, print, format, name, exif)
         } finally {
             print.recycle()
         }
@@ -162,7 +162,7 @@ object PhotoPipeline {
         right.recycle()
         first.delete()
         try {
-            return save(context, strip, "demi-format-$name", exif, name)
+            return save(context, strip, PhotoFormat.HALF_FRAME, name, exif)
         } finally {
             strip.recycle()
         }
@@ -193,7 +193,7 @@ object PhotoPipeline {
         val strip = PhotoboothStrip.compose(frames)
         frames.forEach { it.recycle() }
         try {
-            return save(context, strip, "photomaton-$name", exif, name)
+            return save(context, strip, PhotoFormat.PHOTOBOOTH, name, exif)
         } finally {
             strip.recycle()
         }
@@ -206,11 +206,15 @@ object PhotoPipeline {
         return copy
     }
 
-    private fun save(context: Context, bmp: Bitmap, name: String, exif: ExifInterface?, recipe: String): Uri {
-        val slug = name.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "photo" }
+    /**
+     * Nom de fichier : ARGENTICAM_<format>_<pellicule>_<date>_<heure>.jpg
+     * (la galerie s'en sert pour ranger les photos : voir PhotoLibrary.parseName).
+     */
+    private fun save(context: Context, bmp: Bitmap, format: PhotoFormat, recipe: String, exif: ExifInterface?): Uri {
+        val slug = PhotoLibrary.slug(recipe)
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "ARGENTICAM_${slug}_$stamp.jpg")
+            put(MediaStore.Images.Media.DISPLAY_NAME, "ARGENTICAM_${PhotoLibrary.formatTag(format)}_${slug}_$stamp.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/ArgentiCam")
             put(MediaStore.Images.Media.IS_PENDING, 1)

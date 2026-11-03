@@ -52,7 +52,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `RetroDial.kt` | La molette rétro (crans, vibration, inertie) |
 | `Frames.kt` | `PhotoFormat` (par `FormatCategory`) et `PrintFrame` : géométrie en mm, recadrage, composition, `drawBorder` partagé viseur / photo. `PaperFrame` = instantanés ; bandes multi-photos : `HalfFrameStrip`, `PhotoboothStrip` |
 | `Polaroid.kt` | Mode Polaroid : géométrie (Polaroid 600), recadrage carré, cadre papier, masque du viseur, développement animé |
-| `Gallery.kt`, `PhotoLibrary.kt` | Galerie intégrée, MediaStore, compteur de rouleau |
+| `Gallery.kt`, `PhotoLibrary.kt` | Galerie : onglets Pellicule (planche contact) / Tirages ; MediaStore, compteur de rouleau. Format et pellicule sont lus dans le nom de fichier `ARGENTICAM_<format>_<pellicule>_<date>_<heure>.jpg` (`PhotoLibrary.parseName`, rétrocompatible) : ne pas changer ce nommage sans adapter le parseur |
 | `Inscription.kt` | Date / petit mot imprimés (dos dateur orange, légende manuscrite Polaroid), même code pour le viseur et la photo |
 | `ZoomableImage.kt` | Image zoomable de la visionneuse (pincement, déplacement, double-tap ; ne consomme pas le swipe du pager à ×1) |
 

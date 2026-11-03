@@ -9,14 +9,34 @@ import android.provider.MediaStore
 import android.util.Size
 import kotlin.math.max
 
-data class Photo(val uri: Uri, val id: Long)
+data class Photo(
+    val uri: Uri,
+    val id: Long,
+    /** Format de prise de vue, retrouvé dans le nom du fichier. */
+    val format: PhotoFormat = PhotoFormat.STANDARD,
+    /** Nom de la pellicule / recette, pour le bord de la planche contact. */
+    val film: String = "",
+    val width: Int = 0,
+    val height: Int = 0,
+) {
+    /** Photo "classique" (rangée sur la planche contact) ou tirage encadré (Polaroid, bandes...). */
+    val isClassic: Boolean get() = format == PhotoFormat.STANDARD || format == PhotoFormat.DISPOSABLE
+
+    /** Proportions largeur / hauteur (3:4 par défaut). */
+    val aspect: Float get() = if (width > 0 && height > 0) width.toFloat() / height else 0.75f
+}
 
 /** Lit les photos prises par l'appli dans la galerie (MediaStore). */
 object PhotoLibrary {
 
     fun load(context: Context): List<Photo> {
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(MediaStore.Images.Media._ID)
+        val projection = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.WIDTH,
+            MediaStore.Images.Media.HEIGHT,
+        )
         val path = MediaStore.Images.Media.RELATIVE_PATH
         val selection = "$path LIKE ? OR $path LIKE ?"
         // "FilmCam" = ancien nom du dossier, on le garde pour retrouver les premiers tests.
@@ -26,12 +46,57 @@ object PhotoLibrary {
         val result = ArrayList<Photo>()
         context.contentResolver.query(collection, projection, selection, args, sort)?.use { c ->
             val idCol = c.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+            val nameCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+            val wCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH)
+            val hCol = c.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT)
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
-                result.add(Photo(ContentUris.withAppendedId(collection, id), id))
+                val (format, film) = parseName(c.getString(nameCol) ?: "")
+                result.add(
+                    Photo(
+                        ContentUris.withAppendedId(collection, id), id, format, film,
+                        c.getInt(wCol), c.getInt(hCol),
+                    ),
+                )
             }
         }
         return result
+    }
+
+    fun slug(name: String): String =
+        name.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]+"), "-").trim('-').ifEmpty { "photo" }
+
+    fun formatTag(f: PhotoFormat): String = f.name.lowercase(java.util.Locale.ROOT).replace('_', '-')
+
+    private val tags = PhotoFormat.entries.associateBy { formatTag(it) }
+
+    /** Anciens noms ("ARGENTICAM_polaroid-portra-400_...") : le format était au début du nom de pellicule. */
+    private val oldPrefixes = listOf(
+        "polaroid-go-" to PhotoFormat.POLAROID_GO,
+        "instax-mini-" to PhotoFormat.INSTAX_MINI,
+        "medium-6x6-" to PhotoFormat.MEDIUM_6X6,
+        "demi-format-" to PhotoFormat.HALF_FRAME,
+        "photomaton-" to PhotoFormat.PHOTOBOOTH,
+        "spectra-" to PhotoFormat.SPECTRA,
+        "film35-" to PhotoFormat.FILM35,
+        "polaroid-" to PhotoFormat.POLAROID,
+    )
+
+    /** Retrouve le format et le nom de pellicule à partir du nom de fichier. */
+    fun parseName(displayName: String): Pair<PhotoFormat, String> {
+        val parts = displayName.substringBeforeLast('.').split('_')
+        var format = PhotoFormat.STANDARD
+        var slug = parts.getOrNull(1) ?: ""
+        if (parts.size >= 5 && tags.containsKey(parts[1])) {
+            format = tags.getValue(parts[1])
+            slug = parts[2]
+        } else {
+            oldPrefixes.firstOrNull { slug.startsWith(it.first) }?.let { (prefix, f) ->
+                format = f
+                slug = slug.removePrefix(prefix)
+            }
+        }
+        return format to slug.replace('-', ' ').uppercase(java.util.Locale.FRENCH)
     }
 
     fun thumbnail(context: Context, uri: Uri, px: Int): Bitmap? = try {
