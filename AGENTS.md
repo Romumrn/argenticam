@@ -93,9 +93,9 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
 - Viseur Polaroid : dessiner le cadre avec des rectangles pleins, **jamais** de `Path` troué en `EvenOdd`
   (rempli entièrement sur certains Xiaomi). Les pellicules `instant = true` sont les seules proposées en mode Polaroid.
 - **Formats encadrés** : tout passe par `PrintFrame` (`Frames.kt`). `drawBorder` dessine le cadre sans jamais toucher
+  la fenêtre de l'image, avec le même code dans le viseur et sur la photo. Un nouveau format = une nouvelle `PrintFrame`.
   Un cadre se peint d'un seul aplat (`clipOutRect` sur la fenêtre), jamais avec plusieurs rectangles : sinon des coutures
   fines apparaissent. `compose` peint d'abord le fond (`drawUnderlay`) sous la photo pour que son bord ne laisse pas de ligne.
-  la fenêtre de l'image, avec le même code dans le viseur et sur la photo. Un nouveau format = une nouvelle `PrintFrame`.
   Les pellicules proposées dépendent de `PhotoFormat.allows` (`instant`, `disposable`, `booth`).
   Formats à plusieurs déclenchements (`shots` > 1) : demi-format (1re vue gardée dans le cache, `PhotoPipeline.developHalf*`)
   et photomaton (4 `Capture` enchaînées avec compte à rebours, `developBooth`). Les captures passent par `capture()`
