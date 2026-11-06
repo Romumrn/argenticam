@@ -117,7 +117,7 @@ private val Card = Color(0xFF161616)
 private val Warn = Color(0xFFFF6B5B)
 
 private enum class Tab(val label: String) {
-    Recipe("RECETTE"), Format("FORMAT"), Text("TEXTE"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
+    Recipe("RECETTE"), Format("FORMAT"), Text("TEXTE"), Frame("CADRE"), Lens("OBJECTIF"), Speed("VITESSE"), Iso("ISO"), Ev("EV"), Wb("BLANCS"), Focus("FOCUS")
 }
 
 private enum class Sheet { Settings, Library, Display }
@@ -228,6 +228,15 @@ fun CameraScreen(
     var boothPose by remember { mutableIntStateOf(0) }
     var inscription by remember { mutableStateOf(InscriptionStore.load(context)) }
     var typingNote by remember { mutableStateOf(false) }
+
+    // couleur et forme du cadre des tirages instantanés
+    var frameChoice by remember { mutableStateOf(FrameStyleStore.load(context)) }
+    val frameStyle = frameChoice.first
+    val frameRound = frameChoice.second
+    fun setFrame(style: FrameStyle, round: Boolean) {
+        frameChoice = style to round
+        FrameStyleStore.save(context, style, round)
+    }
 
     fun setInscription(i: Inscription) {
         inscription = i
@@ -532,7 +541,7 @@ fun CameraScreen(
         val name = recipe.name
         val fmt = format
         val note = if (fmt.canWrite) inscription else Inscription()
-        val edge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
+        val edge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1, frameStyle, frameRound)
         // Jetable et photomaton : le vrai flash du téléphone, si on l'a allumé
         imageCapture.flashMode =
             if ((fmt == PhotoFormat.DISPOSABLE || fmt == PhotoFormat.PHOTOBOOTH) && flashOn) {
@@ -612,7 +621,7 @@ fun CameraScreen(
 
     // Sélecteur d'un réglage (molette, liste...) : affiché dans le tiroir sous la case touchée
     val dialArea: @Composable (Tab) -> Unit = { t ->
-            Box(Modifier.fillMaxWidth().height(84.dp).padding(top = 4.dp), contentAlignment = Alignment.CenterStart) {
+            Box(Modifier.fillMaxWidth().height(if (t == Tab.Frame) 124.dp else 84.dp).padding(top = 4.dp), contentAlignment = Alignment.CenterStart) {
                 val k = caps
                 when (t) {
                     Tab.Recipe -> LazyRow(
@@ -702,6 +711,12 @@ fun CameraScreen(
                             }
                         }
                     }
+
+                    Tab.Frame -> FramePicker(
+                        frameStyle, frameRound,
+                        Modifier.padding(horizontal = 12.dp),
+                        onChange = { st, rd -> setFrame(st, rd) },
+                    )
 
                     Tab.Lens -> ValueRow(
                         values = lenses,
@@ -914,7 +929,7 @@ fun CameraScreen(
                         )
                     },
                 )
-                val viewEdge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1)
+                val viewEdge = EdgeInfo(recipe.base().name.uppercase(), shots % RollCounter.ROLL_SIZE + 1, frameStyle, frameRound)
                 format.frame?.let { FrameViewfinderMask(it, viewEdge, deviceRot, Modifier.fillMaxSize()) }
                 // aides à la composition (grille, coins, niveau), dans la fenêtre de l'image
                 CompositionGuides(
@@ -939,7 +954,10 @@ fun CameraScreen(
                                 val p = fr.printRect(pw, ph)
                                 c.nativeCanvas.save()
                                 c.nativeCanvas.concat(fr.layoutMatrix(size.width, size.height, deviceRot))
-                                Imprint.drawCaption(c.nativeCanvas, fr, p.left, p.top, p.width(), inscription)
+                                Imprint.drawCaption(
+                                    c.nativeCanvas, fr, p.left, p.top, p.width(), inscription,
+                                    ink = frameStyle.inkFor(shots % RollCounter.ROLL_SIZE + 1),
+                                )
                                 c.nativeCanvas.restore()
                             } else if (fr != null) {
                                 val h = fr.holeRect(size.width, size.height)
@@ -1257,8 +1275,11 @@ fun CameraScreen(
                     SheetSection("TIRAGE")
                     TileRow {
                         SheetTile("TEXTE", if (inscription.active) inscription.mode.label else "—", tab == Tab.Text) { pick(Tab.Text) }
+                        if (format.frame is PaperFrame) {
+                            SheetTile("CADRE", frameStyle.label.substringBefore(" ("), tab == Tab.Frame) { pick(Tab.Frame) }
+                        }
                     }
-                    if (tab == Tab.Text) dialArea(tab)
+                    if (tab == Tab.Text || tab == Tab.Frame) dialArea(tab)
                 }
 
                 SheetSection("IMAGE")
@@ -1298,6 +1319,9 @@ fun CameraScreen(
                 formats = PhotoFormat.entries.filter { it.allows(recipe.base()) },
                 format = format,
                 onFormat = { setFormat(it) },
+                frameStyle = frameStyle,
+                frameRound = frameRound,
+                onFrame = { st, rd -> setFrame(st, rd) },
                 onPick = { r ->
                     if (r.id == saved.id) {
                         sheet = null
@@ -1537,6 +1561,9 @@ private fun RecipeLibrary(
     formats: List<PhotoFormat>,
     format: PhotoFormat,
     onFormat: (PhotoFormat) -> Unit,
+    frameStyle: FrameStyle,
+    frameRound: Boolean,
+    onFrame: (FrameStyle, Boolean) -> Unit,
     onPick: (Recipe) -> Unit,
     onEdit: () -> Unit,
     onNew: () -> Unit,
@@ -1555,6 +1582,11 @@ private fun RecipeLibrary(
             androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(formats) { f -> Chip(f.label, f == format) { onFormat(f) } }
             }
+        }
+        // Tirage instantané : couleur du cadre (éditions spéciales Polaroid) et forme ronde
+        if (format.frame is PaperFrame) {
+            SheetSection("CADRE")
+            FramePicker(frameStyle, frameRound, Modifier, onFrame)
         }
         grouped.forEach { (cat, list) ->
             SheetSection(cat)
@@ -1595,6 +1627,72 @@ private fun RecipeLibrary(
                     if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
+        }
+    }
+}
+
+/** Pinceau qui montre un cadre comme il sera tiré (uni, dégradé, métal, pack de couleurs, spectre). */
+private fun frameBrush(style: FrameStyle): Brush = when (style.kind) {
+    FrameKind.SOLID -> androidx.compose.ui.graphics.SolidColor(Color(style.colors[0]))
+    FrameKind.GRADIENT -> Brush.verticalGradient(style.colors.map { Color(it) })
+    FrameKind.METALLIC -> Brush.linearGradient(style.colors.map { Color(it) })
+    FrameKind.COLOR_PACK -> Brush.sweepGradient(style.colors.map { Color(it) } + Color(style.colors[0]))
+    FrameKind.SPECTRUM -> Brush.sweepGradient(
+        (0..6).map { Color(android.graphics.Color.HSVToColor(floatArrayOf(it * 60f % 360f, 0.55f, 0.97f))) },
+    )
+}
+
+/** Choix du cadre des tirages instantanés : pastilles de couleur et forme carrée / ronde. */
+@Composable
+private fun FramePicker(
+    style: FrameStyle,
+    round: Boolean,
+    modifier: Modifier,
+    onChange: (FrameStyle, Boolean) -> Unit,
+) {
+    Column(modifier.fillMaxWidth()) {
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items(FrameStyles.all, key = { it.id }) { s ->
+                val selected = s.id == style.id
+                Column(
+                    Modifier.width(58.dp).clickable { onChange(s, round) },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        Modifier
+                            .size(width = 36.dp, height = 44.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(frameBrush(s))
+                            .border(
+                                BorderStroke(if (selected) 2.dp else 1.dp, if (selected) Amber else Color.White.copy(alpha = 0.15f)),
+                                RoundedCornerShape(4.dp),
+                            ),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        // la fenêtre de la photo, pour voir le cadre autour
+                        Box(
+                            Modifier
+                                .padding(top = 4.dp)
+                                .size(28.dp)
+                                .clip(if (round) CircleShape else RoundedCornerShape(1.dp))
+                                .background(Color(0xFF2A2F36)),
+                        )
+                    }
+                    Text(
+                        s.label.substringBefore(" ("),
+                        color = if (selected) Amber else Color.White.copy(alpha = 0.7f),
+                        fontSize = 9.sp, maxLines = 1,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+        }
+        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("Carré", !round) { onChange(style, false) }
+            Chip("Rond", round) { onChange(style, true) }
         }
     }
 }

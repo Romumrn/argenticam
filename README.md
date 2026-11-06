@@ -39,6 +39,7 @@ Une appli Android d'appareil photo avec des **simulations de pellicules argentiq
 - Les recettes et les pellicules de base sont aussi rangées par catégorie (Mes recettes, Fujifilm, Recettes, Pellicules, Instantanés, Jetables, Photomaton)
 - **Pellicule 35 mm** : la photo au format 24×36 sur une bande de film scannée, avec perforations, nom de la pellicule et numéro de vue imprimés sur les bords (aperçu dans le viseur)
 - **Appareil jetable** : couleurs saturées, gros grain, vignettage, coins flous d'objectif en plastique, vrai flash du téléphone et date orange automatique ; seules les pellicules jetables sont proposées
+- **Couleur du cadre des instantanés** (dans la bibliothèque quand un format Polaroid / Instax est choisi, ou dans le tiroir, case CADRE), d'après les éditions spéciales Polaroid : blanc uni, crème, noir (Black Frame), couleurs unies ou pack **Color Frames** (une couleur différente à chaque photo), **Gradient Frames** (une tranche du spectre à chaque photo), dégradés, **métallisés** (Golden Moments, Silver Linings, Metallic Nights), et fenêtre **ronde** (Round Frame). La légende passe à l'encre claire sur un cadre sombre
 - **Date et petit mot** sur les tirages instantanés (Polaroid, Instax) : légende manuscrite au feutre sur le bord du bas ; le texte se tape au clavier, l'aperçu est visible dans le viseur
 - **Le format et la pellicule vont ensemble** : choisir une pellicule Polaroid passe en format Polaroid, une pellicule de photomaton en photomaton, etc. ; chaque format ne propose que ses pellicules. Le format se choisit dans la bibliothèque des pellicules, parmi les variantes de la pellicule choisie (3:4, 35 mm, demi-format, 6×6 pour une pellicule classique ; 600, Go, Spectra, Instax pour un instantané)
 - **Vignettes des pellicules** : chaque recette est montrée sur une photo de référence (la Petite France à Strasbourg) développée avec son rendu (dans son cadre pour les instantanés, une icône de bande photo pour le photomaton)
@@ -98,6 +99,7 @@ CameraX ImageCapture ──► JPEG ──► Bitmap ──► shader "film" (EG
 | `Manual.kt` | Réglages manuels via Camera2 (ISO, vitesse, EV, balance des blancs, focus) et détection des objectifs |
 | `RetroDial.kt` | La molette rétro |
 | `Frames.kt` | Formats (`PhotoFormat`) et cadres communs : Polaroid, bande 35 mm (géométrie, recadrage, composition, masque du viseur) |
+| `FrameStyles.kt` | Couleurs et dégradés des cadres d'instantanés (éditions spéciales), choix gardé dans les préférences |
 | `Polaroid.kt` | Mode Polaroid : géométrie du cadre, recadrage, composition du tirage, cadre du viseur, animation de développement |
 | `Recipe.kt` | Modèle des recettes, recettes intégrées, sauvegarde, conversion en paramètres de rendu |
 | `RecipeEditor.kt` | L'éditeur de recettes |

@@ -98,7 +98,7 @@ object Imprint {
     @Synchronized
     fun drawCaption(
         canvas: Canvas, frame: PrintFrame, printLeft: Float, printTop: Float, printWidth: Float,
-        i: Inscription, date: Date = Date(),
+        i: Inscription, date: Date = Date(), ink: Int = FrameStyle.INK_DARK,
     ) {
         if (!i.active) return
         val parts = buildList {
@@ -111,6 +111,7 @@ object Imprint {
         val bottomTop = printTop + (frame.holeY + frame.holeH) * k
         val bottomH = (frame.printH - frame.holeY - frame.holeH) * k
         val size = minOf(6f * k, bottomH * 0.42f)
+        handPaint.color = ink
         handPaint.textSize = size
         val maxW = (frame.printW - 2 * frame.holeX - 4f) * k
         val tw = handPaint.measureText(line)

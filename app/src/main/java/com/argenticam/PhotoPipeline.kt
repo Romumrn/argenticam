@@ -120,7 +120,10 @@ object PhotoPipeline {
         val print = frame.compose(developed, edge)
         developed.recycle()
         if (frame is PaperFrame) {
-            Imprint.drawCaption(android.graphics.Canvas(print), frame, 0f, 0f, print.width.toFloat(), inscription)
+            Imprint.drawCaption(
+                android.graphics.Canvas(print), frame, 0f, 0f, print.width.toFloat(), inscription,
+                ink = edge.style.inkFor(edge.frameNumber),
+            )
         }
         try {
             return save(context, print, format, name, exif)

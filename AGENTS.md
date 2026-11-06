@@ -51,6 +51,7 @@ node tools/check_shader.js       # compile le shader GLSL (Playwright + Chromium
 | `LutCache.kt` | Chargement des LUT 3D depuis `assets/luts/` |
 | `RetroDial.kt` | La molette rétro (crans, vibration, inertie) |
 | `Frames.kt` | `PhotoFormat` (par `FormatCategory`) et `PrintFrame` : géométrie en mm, recadrage, composition, `drawBorder` partagé viseur / photo. `PaperFrame` = instantanés ; bandes multi-photos : `HalfFrameStrip`, `PhotoboothStrip` |
+| `FrameStyles.kt` | `FrameStyle` (uni, dégradé, métal, pack de couleurs, spectre) : couleur du cadre des instantanés, passée par `EdgeInfo.style` / `EdgeInfo.round` ; `FrameStyleStore` garde le choix |
 | `Polaroid.kt` | Mode Polaroid : géométrie (Polaroid 600), recadrage carré, cadre papier, masque du viseur, développement animé |
 | `Gallery.kt`, `PhotoLibrary.kt` | Galerie : onglets Pellicule (planche contact) / Tirages ; MediaStore, compteur de rouleau. Format et pellicule sont lus dans le nom de fichier `ARGENTICAM_<format>_<pellicule>_<date>_<heure>.jpg` (`PhotoLibrary.parseName`, rétrocompatible) : ne pas changer ce nommage sans adapter le parseur |
 | `Inscription.kt` | Date / petit mot imprimés (dos dateur orange, légende manuscrite Polaroid), même code pour le viseur et la photo |
@@ -92,6 +93,8 @@ Ordre dans le shader : netteté → clarté → halation → gain BdB (Kelvin + 
 - Viseur Polaroid : dessiner le cadre avec des rectangles pleins, **jamais** de `Path` troué en `EvenOdd`
   (rempli entièrement sur certains Xiaomi). Les pellicules `instant = true` sont les seules proposées en mode Polaroid.
 - **Formats encadrés** : tout passe par `PrintFrame` (`Frames.kt`). `drawBorder` dessine le cadre sans jamais toucher
+  Un cadre se peint d'un seul aplat (`clipOutRect` sur la fenêtre), jamais avec plusieurs rectangles : sinon des coutures
+  fines apparaissent. `compose` peint d'abord le fond (`drawUnderlay`) sous la photo pour que son bord ne laisse pas de ligne.
   la fenêtre de l'image, avec le même code dans le viseur et sur la photo. Un nouveau format = une nouvelle `PrintFrame`.
   Les pellicules proposées dépendent de `PhotoFormat.allows` (`instant`, `disposable`, `booth`).
   Formats à plusieurs déclenchements (`shots` > 1) : demi-format (1re vue gardée dans le cache, `PhotoPipeline.developHalf*`)

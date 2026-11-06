@@ -115,7 +115,13 @@ val FilmPreset.kind: FilmKind
     }
 
 /** Ce qui est imprimé sur les bords d'une bande de film. */
-data class EdgeInfo(val filmName: String, val frameNumber: Int)
+data class EdgeInfo(
+    val filmName: String,
+    val frameNumber: Int,
+    /** Cadre des tirages instantanés (couleur, dégradé, métal...) et fenêtre ronde. */
+    val style: FrameStyle = FrameStyles.WHITE,
+    val round: Boolean = false,
+)
 
 /**
  * Un tirage "encadré" : dimensions en millimètres et fenêtre de l'image.
@@ -200,10 +206,16 @@ abstract class PrintFrame(
         val h = (printH * k).roundToInt()
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
+        // fond sous la photo : le bord de l'image (à cheval sur deux pixels) se mêle au papier,
+        // pas à du transparent qui deviendrait une fine ligne sombre dans le JPEG
+        drawUnderlay(canvas, k, edge)
         canvas.drawBitmap(image, holeX * k, holeY * k, Paint(Paint.FILTER_BITMAP_FLAG))
         drawBorder(canvas, 0f, 0f, k, edge)
         return out
     }
+
+    /** Peint le fond du tirage avant d'y poser la photo (rien par défaut). */
+    protected open fun drawUnderlay(canvas: Canvas, k: Float, edge: EdgeInfo) {}
 
     /**
      * Dessine le cadre autour de la fenêtre de l'image, pour un tirage dont le coin est en
@@ -221,10 +233,11 @@ abstract class PrintFrame(
 
 /** Remplit un rectangle [w]x[h] autour d'une fenêtre [hole], avec 4 rectangles pleins. */
 internal fun fillAround(canvas: Canvas, left: Float, top: Float, w: Float, h: Float, hole: RectF, paint: Paint) {
-    canvas.drawRect(left, top, left + w, hole.top, paint)
-    canvas.drawRect(left, hole.bottom, left + w, top + h, paint)
-    canvas.drawRect(left, hole.top, hole.left, hole.bottom, paint)
-    canvas.drawRect(hole.right, hole.top, left + w, hole.bottom, paint)
+    // un seul aplat, la fenêtre exclue par découpe : pas de coutures entre plusieurs rectangles
+    canvas.save()
+    canvas.clipOutRect(hole)
+    canvas.drawRect(left, top, left + w, top + h, paint)
+    canvas.restore()
 }
 
 /** Marquages de bord de film (orangés), en texte vertical ou horizontal. */
@@ -252,22 +265,44 @@ internal val Backlight = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFEDEAE3
 /** Tirage instantané : papier autour de l'image, bord du bas plus épais (où l'on écrit). */
 open class PaperFrame(
     printW: Float, printH: Float, holeX: Float, holeY: Float, holeW: Float, holeH: Float,
-    paperColor: Int,
+    /** Couleur du papier si aucun style n'est choisi (blanc). */
+    @Suppress("unused") paperColor: Int,
 ) : PrintFrame(printW, printH, holeX, holeY, holeW, holeH) {
-    private val paper = Paint().apply { color = paperColor }
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = 0x26000000
+    private val paper = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    @Synchronized
+    override fun drawUnderlay(canvas: Canvas, k: Float, edge: EdgeInfo) {
+        val print = RectF(0f, 0f, printW * k, printH * k)
+        paper.style = Paint.Style.FILL
+        edge.style.applyTo(paper, print, edge.frameNumber)
+        canvas.drawRect(print, paper)
     }
 
     @Synchronized
     override fun drawBorder(canvas: Canvas, left: Float, top: Float, k: Float, edge: EdgeInfo) {
-        fillAroundHole(canvas, left, top, k, paper)
-        // léger liseré sombre à la jonction image / papier, comme sur un vrai tirage
-        line.strokeWidth = maxOf(1f, k * 0.2f)
-        val l = left + holeX * k
-        val t = top + holeY * k
-        canvas.drawRect(l, t, l + holeW * k, t + holeH * k, line)
+        val print = RectF(left, top, left + printW * k, top + printH * k)
+        val hole = RectF(left + holeX * k, top + holeY * k, left + (holeX + holeW) * k, top + (holeY + holeH) * k)
+        paper.style = Paint.Style.FILL
+        edge.style.applyTo(paper, print, edge.frameNumber)
+        // cadre d'un seul tenant (uni, dégradé ou métal), la fenêtre de l'image découpée
+        canvas.save()
+        canvas.clipOutRect(hole)
+        canvas.drawRect(print, paper)
+        canvas.restore()
+        if (edge.round) {
+            // Round Frame : le papier recouvre les coins de la fenêtre (anneau, sans forme trouée)
+            val cx = hole.centerX()
+            val cy = hole.centerY()
+            val r = minOf(hole.width(), hole.height()) / 2f
+            val outer = Math.hypot(hole.width() / 2.0, hole.height() / 2.0).toFloat() + 2f
+            canvas.save()
+            canvas.clipRect(hole)
+            paper.style = Paint.Style.STROKE
+            paper.strokeWidth = outer - r
+            canvas.drawCircle(cx, cy, r + (outer - r) / 2f, paper)
+            paper.style = Paint.Style.FILL
+            canvas.restore()
+        }
     }
 }
 
